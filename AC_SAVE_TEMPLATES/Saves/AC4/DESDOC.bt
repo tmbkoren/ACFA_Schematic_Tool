@@ -1,0 +1,42 @@
+//------------------------------------------------
+//--- 010 Editor v13.0.2 Binary Template
+//
+//      File: DESDOC.bt
+//   Authors: WarpZephyr
+//   Version: 1.0.3
+//   Purpose: Armored Core 4 design documents.
+//  Category: Saves
+// File Mask: DESDOC.DAT
+//  ID Bytes: 
+//   History: 
+//------------------------------------------------
+
+#define DESIGN_CAPACITY 128
+#define _DESIGN_NO_CALL
+#define _DESIGN_ENCODING_AUTO
+
+// Auto detect based on file size
+// 1,005,572 means 2 byte encoding is being used (US)
+// 993,284 means 1 byte encoding is being used (JP)
+local ubyte _DESIGN_ENCODING_WIDE <hidden=true> = 0;
+local quad _DESDOC_FILE_SIZE <hidden=true> = FileSize();
+if (_DESDOC_FILE_SIZE == 1005572)
+{
+    _DESIGN_ENCODING_WIDE = 1;
+}
+
+#include "Design.bt"
+BigEndian();
+
+//------------------------------------------------
+
+typedef struct
+{
+    ushort design_count; // Saved design count
+    ushort unk02;
+    Design designs[DESIGN_CAPACITY]; // Read the whole file anyways
+} DESDOC <bgcolor=cLtRed>;
+
+//------------------------------------------------
+
+DESDOC desdoc;
