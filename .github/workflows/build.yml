@@ -1,34 +1,31 @@
-name: Build Windows Executable
+name: Build Executable
 
 on:
   push:
     tags:
-      - "v*"
-  workflow_dispatch:
+      - 'v*'
 
 jobs:
-  build-windows:
+  build:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.12"
+          python-version: '3.12'
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Build executable
-        run: |
-          pyinstaller ACFA_Schematic_Tool_GUI/app.py --onefile --name ACFA_Schematic_Tool --add-data "ACFA_PS3_US_PARTID_TO_PARTNAME.txt;."
+        run: pyinstaller app.py --noconfirm --onefile --name ACFA_Schematic_Tool --add-data "ACFA_PS3_US_PARTID_TO_PARTNAME.txt;."
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload to GitHub Releases
+        uses: softprops/action-gh-release@v1
         with:
-          name: ACFA_Schematic_Tool
-          path: dist/ACFA_Schematic_Tool.exe
+          files: dist/ACFA_Schematic_Tool.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
