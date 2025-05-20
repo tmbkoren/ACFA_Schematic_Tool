@@ -2,4 +2,7 @@ AC_SAVE_TEMPLATES
 output
 sch_data
 venv
+build
+dist
+ACFA_Schematic_Tool.spec
 **/__pycache__/
