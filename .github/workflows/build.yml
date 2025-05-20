@@ -28,7 +28,7 @@ jobs:
           pyinstaller ACFA_Schematic_Tool_GUI/app.py --onefile --name ACFA_Schematic_Tool --add-data "ACFA_PS3_US_PARTID_TO_PARTNAME.txt;."
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ACFA_Schematic_Tool
           path: dist/ACFA_Schematic_Tool.exe
