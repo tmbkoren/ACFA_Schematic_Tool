@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import shutil
 import struct
@@ -7,7 +8,18 @@ BLOCK_SIZE = 24280
 NAME_SIZE = 96  # 48 wchar_t = 96 bytes in UTF-16
 
 
+def resource_path(relative_path):
+    """
+    Get the absolute path to a resource, works for dev and PyInstaller bundles.
+    """
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
+
 def parse_part_mapping(file_path):
+    file_path = resource_path(file_path)
+
     part_mapping = {}
     current_category = None
     with open(file_path, 'r', encoding='utf-8') as file:
@@ -25,7 +37,6 @@ def parse_part_mapping(file_path):
                 part_mapping[current_category][part_id.strip()
                                                ] = part_name.strip()
     return part_mapping
-
 
 def load_file(path):
     with open(path, "rb") as f:
