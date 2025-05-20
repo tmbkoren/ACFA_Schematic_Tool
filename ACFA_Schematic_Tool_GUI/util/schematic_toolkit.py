@@ -38,6 +38,7 @@ def parse_part_mapping(file_path):
                                                ] = part_name.strip()
     return part_mapping
 
+
 def load_file(path):
     with open(path, "rb") as f:
         return f.read()

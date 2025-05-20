@@ -42,7 +42,6 @@ class SchematicDetailWidget(QWidget):
         group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.layout.insertWidget(self.layout.count() - 1, group)
 
-
     def add_tree_section(self, title: str, entries: dict | list):
         group = QGroupBox(title)
         group.setCheckable(True)

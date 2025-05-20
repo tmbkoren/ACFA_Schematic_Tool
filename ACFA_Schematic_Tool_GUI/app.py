@@ -127,7 +127,8 @@ class SchematicViewer(QWidget):
             dialog = ImportPreviewDialog(data, self)
             if dialog.exec() == QDialog.Accepted:
                 msg = st.insert_schematic(ac4a_path, self.file_path)
-                self.blocks = st.extract_active_schematic_blocks(self.file_path)
+                self.blocks = st.extract_active_schematic_blocks(
+                    self.file_path)
 
                 # Refresh schematic list
                 self.schematic_list.clear()
@@ -136,7 +137,8 @@ class SchematicViewer(QWidget):
                     self.schematic_list.addItem(
                         f"{info['name']} by {info['designer']}")
                 self.schematic_list.setVisible(True)
-                self.schematic_list.setCurrentRow(self.schematic_list.count() - 1)
+                self.schematic_list.setCurrentRow(
+                    self.schematic_list.count() - 1)
 
                 self.label.setText(msg)
             else:
