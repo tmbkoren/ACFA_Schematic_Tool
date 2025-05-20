@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QListWidget, QPlainTextEdit, QFileDialog, QMessageBox
 )
+from widgets.schematic_detail_widget import SchematicDetailWidget
 import os
 import sys
 import schematic_toolkit as st
@@ -24,6 +25,7 @@ class SchematicViewer(QWidget):
 
         self.label = QLabel(
             "Drag & drop a DESDOC.DAT or .ac4a file, or use the Select button:")
+        self.label.setWordWrap(True)
         main_layout.addWidget(self.label)
 
         self.select_button = QPushButton("Select File")
@@ -39,22 +41,25 @@ class SchematicViewer(QWidget):
         self.schematic_list.setVisible(False)
         viewer_layout.addWidget(self.schematic_list)
 
-        self.detail_area = QPlainTextEdit()
-        self.detail_area.setReadOnly(True)
+        self.detail_area = SchematicDetailWidget()
         viewer_layout.addWidget(self.detail_area)
 
         main_layout.addLayout(viewer_layout)
         self.setLayout(main_layout)
 
+        self.imexport_layout = QHBoxLayout()
+
         self.import_button = QPushButton("Import .ac4a into Save")
         self.import_button.setVisible(False)
         self.import_button.clicked.connect(self.import_schematic)
-        main_layout.addWidget(self.import_button)
+        self.imexport_layout.addWidget(self.import_button)
 
         self.export_button = QPushButton("Export to .ac4a")
         self.export_button.setVisible(False)
         self.export_button.clicked.connect(self.export_schematic)
-        main_layout.addWidget(self.export_button)
+        self.imexport_layout.addWidget(self.export_button)
+
+        main_layout.addLayout(self.imexport_layout)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -75,6 +80,9 @@ class SchematicViewer(QWidget):
         self.file_path = path
         _, ext = os.path.splitext(path)
 
+        self.label.setText(f"Selected file: {path}")
+        self.select_button.setText("Select Another File")
+
         self.schematic_list.clear()
         self.detail_area.clear()
         self.schematic_list.setVisible(False)
@@ -84,7 +92,7 @@ class SchematicViewer(QWidget):
             block = st.load_schematic_block_from_ac4a(path)
             data = st.display_schematic_info(block, part_mapping)
             self.schematic_list.setVisible(False)
-            self.detail_area.setPlainText(str(data))
+            self.detail_area.update_with_data(data)
             self.import_button.setVisible(False)
             self.export_button.setVisible(False)
         else:
@@ -102,7 +110,9 @@ class SchematicViewer(QWidget):
     def show_schematic_details(self, index):
         if 0 <= index < len(self.blocks):
             data = st.display_schematic_info(self.blocks[index], part_mapping)
-            self.detail_area.setPlainText(str(data))
+            self.detail_area.update_with_data(data)
+        else:
+            self.detail_area.clear()
 
     def import_schematic(self):
         ac4a_path, _ = QFileDialog.getOpenFileName(
