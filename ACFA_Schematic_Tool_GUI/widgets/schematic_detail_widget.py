@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QGroupBox, QTextEdit, QSpacerItem, QSizePolicy
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QGroupBox, QTextEdit, QSpacerItem, QSizePolicy, QTreeWidget, QTreeWidgetItem
 from PySide6.QtGui import QFont
 
 
@@ -25,16 +25,20 @@ class SchematicDetailWidget(QWidget):
 
         # self.add_section("Timestamp", str(data["timestamp"]))
 
-        parts_text = "\n".join(
-            f"{part['category']}: {part['part_name']} ({part['part_id']})"
-            for part in data["parts"]
-        )
-        self.add_section("Parts", parts_text)
+        # parts_text = "\n".join(
+        #     f"{part['category']}: {part['part_name']} ({part['part_id']})"
+        #     for part in data["parts"]
+        # )
+        # self.add_section("Parts", parts_text)
 
-        tuning_text = "\n".join(
-            f"{label}: {value}" for label, value in data["tuning"].items()
-        )
-        self.add_section("Tuning", tuning_text)
+        # tuning_text = "\n".join(
+        #     f"{label}: {value}" for label, value in data["tuning"].items()
+        # )
+        # self.add_section("Tuning", tuning_text)
+
+        self.add_tree_section("Parts", data["parts"])
+        self.add_tree_section("Tuning", data["tuning"])
+
 
     def add_section(self, title: str, content: str):
         group = QGroupBox(title)
@@ -46,6 +50,25 @@ class SchematicDetailWidget(QWidget):
         box_layout.addWidget(text)
         group.setLayout(box_layout)
         self.layout.insertWidget(self.layout.count() - 1, group)
+
+
+    def add_tree_section(self, title: str, entries: dict | list):
+        tree = QTreeWidget()
+        tree.setHeaderHidden(True)
+
+        parent = QTreeWidgetItem([title])
+        tree.addTopLevelItem(parent)
+
+        if isinstance(entries, dict):
+            for key, val in entries.items():
+                QTreeWidgetItem(parent, [f"{key}: {val}"])
+        elif isinstance(entries, list):
+            for item in entries:
+                part_str = f"{item['category']}: {item['part_name']} (ID {item['part_id']})"
+                QTreeWidgetItem(parent, [part_str])
+        parent.setExpanded(True)
+
+        self.layout.insertWidget(self.layout.count() - 1, tree)
 
 
     def clear(self, preserve_placeholder=True):
