@@ -1,1 +1,5 @@
+AC_SAVE_TEMPLATES
+output
+sch_data
 venv
+**/__pycache__/
