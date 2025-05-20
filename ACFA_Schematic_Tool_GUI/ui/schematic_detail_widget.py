@@ -22,7 +22,7 @@ class SchematicDetailWidget(QWidget):
         self.layout.addItem(self.spacer)
 
     def update_with_data(self, data: dict):
-        self.clear(preserve_placeholder=False)
+        self.clear()
 
         title = f"<b>{data['name']}</b> by {data['designer']} (User Slot {data['category']})"
         self.info_label.setText(title)

@@ -4,9 +4,9 @@ from PySide6.QtWidgets import (
 )
 from ui.schematic_detail_widget import SchematicDetailWidget
 from ui.import_preview_dialog import ImportPreviewDialog
+from util import schematic_toolkit as st
 import os
 import sys
-import schematic_toolkit as st
 
 part_mapping = st.parse_part_mapping("ACFA_PS3_US_PARTID_TO_PARTNAME.txt")
 
