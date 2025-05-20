@@ -74,7 +74,7 @@ class SchematicDetailWidget(QWidget):
 
         self.layout.insertWidget(self.layout.count() - 1, group)
 
-    def clear(self, preserve_placeholder=True):
+    def clear(self):
         while self.layout.count() > 2:
             item = self.layout.takeAt(1)
             if item.widget():

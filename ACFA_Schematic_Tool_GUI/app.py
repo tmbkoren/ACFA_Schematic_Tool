@@ -1,8 +1,9 @@
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QListWidget, QPlainTextEdit, QFileDialog, QMessageBox
+    QPushButton, QLabel, QListWidget, QFileDialog, QMessageBox, QDialog
 )
-from widgets.schematic_detail_widget import SchematicDetailWidget
+from ui.schematic_detail_widget import SchematicDetailWidget
+from ui.import_preview_dialog import ImportPreviewDialog
 import os
 import sys
 import schematic_toolkit as st
@@ -120,19 +121,27 @@ class SchematicViewer(QWidget):
             return
 
         try:
-            msg = st.insert_schematic(ac4a_path, self.file_path)
-            self.blocks = st.extract_active_schematic_blocks(self.file_path)
+            block = st.load_schematic_block_from_ac4a(ac4a_path)
+            data = st.display_schematic_info(block, part_mapping)
 
-            # Refresh schematic list
-            self.schematic_list.clear()
-            for block in self.blocks:
-                info = st.display_schematic_info(block, part_mapping)
-                self.schematic_list.addItem(
-                    f"{info['name']} by {info['designer']}")
-            self.schematic_list.setVisible(True)
-            self.schematic_list.setCurrentRow(self.schematic_list.count() - 1)
+            dialog = ImportPreviewDialog(data, self)
+            if dialog.exec() == QDialog.Accepted:
+                msg = st.insert_schematic(ac4a_path, self.file_path)
+                self.blocks = st.extract_active_schematic_blocks(self.file_path)
 
-            self.label.setText(msg)
+                # Refresh schematic list
+                self.schematic_list.clear()
+                for block in self.blocks:
+                    info = st.display_schematic_info(block, part_mapping)
+                    self.schematic_list.addItem(
+                        f"{info['name']} by {info['designer']}")
+                self.schematic_list.setVisible(True)
+                self.schematic_list.setCurrentRow(self.schematic_list.count() - 1)
+
+                self.label.setText(msg)
+            else:
+                self.label.setText("Import cancelled.")
+
         except Exception as e:
             self.label.setText(f"Import failed: {e}")
 
