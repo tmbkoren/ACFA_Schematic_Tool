@@ -20,7 +20,6 @@ class SchematicViewer(QWidget):
         self.blocks = []
         self.file_path = None
 
-        # Layouts
         main_layout = QVBoxLayout()
 
         self.label = QLabel(
@@ -32,7 +31,6 @@ class SchematicViewer(QWidget):
         self.select_button.clicked.connect(self.open_file_dialog)
         main_layout.addWidget(self.select_button)
 
-        # Horizontal layout for list/detail
         viewer_layout = QHBoxLayout()
 
         self.schematic_list = QListWidget()

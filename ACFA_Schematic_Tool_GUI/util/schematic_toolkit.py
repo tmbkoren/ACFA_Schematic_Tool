@@ -5,7 +5,7 @@ import shutil
 import struct
 
 BLOCK_SIZE = 24280
-NAME_SIZE = 96  # 48 wchar_t = 96 bytes in UTF-16
+NAME_SIZE = 96
 
 
 def resource_path(relative_path):

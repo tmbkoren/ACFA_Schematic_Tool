@@ -46,7 +46,7 @@ class SchematicDetailWidget(QWidget):
         group = QGroupBox(title)
         group.setCheckable(True)
         group.setChecked(True)
-        group.setFlat(True)  # optional for a cleaner look
+        group.setFlat(True)
 
         inner_layout = QVBoxLayout()
         tree = QTreeWidget()
