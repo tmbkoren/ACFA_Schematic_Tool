@@ -1,3 +1,5 @@
-# ACFA_Schematic_Tool
+# ACFA Schematic Tool
 
-Credits go to https://github.com/WarpZephyr/ for templates provided
+### Works only on unencryptes US save files (e.g. PCFA pack)
+
+Credits go to https://github.com/WarpZephyr/ for figuring out the schematic savefile offsets 

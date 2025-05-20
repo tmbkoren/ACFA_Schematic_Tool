@@ -21,7 +21,6 @@ class SchematicViewer(QWidget):
 
         # Layouts
         main_layout = QVBoxLayout()
-        file_layout = QHBoxLayout()
 
         self.label = QLabel(
             "Drag & drop a DESDOC.DAT or .ac4a file, or use the Select button:")
