@@ -72,7 +72,7 @@ def linear_utf16_clean_name_reader(data, start_offset, max_bytes=96):
     raw_field = data[start_offset:start_offset + max_bytes]
     try:
         decoded = raw_field.decode('utf-16-le', errors='ignore').strip('\x00')
-        match = re.match(r'^[A-Za-z0-9 ]+', decoded)
+        match = re.match(r'^[A-Za-z0-9 _\-.]+', decoded)
         return match.group(0).strip() if match else "<Invalid UTF-16 Encoding>"
     except UnicodeDecodeError:
         return "<Invalid UTF-16 Encoding>"
