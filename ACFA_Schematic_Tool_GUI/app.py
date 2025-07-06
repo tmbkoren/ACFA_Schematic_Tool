@@ -59,6 +59,16 @@ class SchematicViewer(QWidget):
 
         main_layout.addLayout(self.imexport_layout)
 
+        self.check_for_desdoc()
+
+    def check_for_desdoc(self):
+        desdoc_path = os.path.join(
+            ".", "EMULATOR", "dev_hdd0", "home", "00000001", "savedata", 
+            "BLUS30187ASSMBLY064", "DESDOC.DAT"
+        )
+        if os.path.exists(desdoc_path):
+            self.process_file(desdoc_path)
+
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
