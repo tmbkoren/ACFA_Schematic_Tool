@@ -24,7 +24,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Build executable
-        run: pyinstaller ACFA_Schematic_Tool_GUI/app.py --noconfirm --onefile --name ACFA_Schematic_Tool --add-data "ACFA_PS3_US_PARTID_TO_PARTNAME.txt;."
+        run: pyinstaller ACFA_Schematic_Tool_GUI/app.pyw --noconfirm --onefile --name ACFA_Schematic_Tool --add-data "ACFA_PS3_US_PARTID_TO_PARTNAME.txt;."
 
       - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@v2
