@@ -123,7 +123,7 @@ class SchematicViewer(QWidget):
             data = st.display_schematic_info(block, part_mapping)
 
             dialog = ImportPreviewDialog(data, self)
-            if dialog.exec() == QDialog.Accepted:
+            if dialog.exec() == QDialog.DialogCode.Accepted:
                 msg = st.insert_schematic(ac4a_path, self.file_path)
                 self.blocks = st.extract_active_schematic_blocks(
                     self.file_path)

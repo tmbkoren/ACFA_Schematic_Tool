@@ -13,7 +13,7 @@ def resource_path(relative_path):
     Get the absolute path to a resource, works for dev and PyInstaller bundles.
     """
     if hasattr(sys, "_MEIPASS"):
-        return os.path.join(sys._MEIPASS, relative_path)
+        return os.path.join(sys._MEIPASS, relative_path) # type: ignore (it is protected by if statement, the error only exists in dev environment)
     return os.path.join(os.path.abspath("."), relative_path)
 
 

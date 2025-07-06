@@ -8,18 +8,18 @@ from PySide6.QtGui import QFont
 class SchematicDetailWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.layout = QVBoxLayout()
-        self.setLayout(self.layout)
+        self.main_layout = QVBoxLayout()
+        self.setLayout(self.main_layout)
 
         self.info_label = QLabel("No schematic selected.")
         self.info_label.setWordWrap(True)
-        self.layout.addWidget(self.info_label)
+        self.main_layout.addWidget(self.info_label)
 
         # Stretch placeholder to keep size consistent when empty
         self.spacer = QSpacerItem(
-            0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding
+            0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding
         )
-        self.layout.addItem(self.spacer)
+        self.main_layout.addItem(self.spacer)
 
     def update_with_data(self, data: dict):
         self.clear()
@@ -30,18 +30,6 @@ class SchematicDetailWidget(QWidget):
         self.add_tree_section("Parts", data["parts"])
         self.add_tree_section("Tuning", data["tuning"])
 
-    def add_section(self, title: str, content: str):
-        group = QGroupBox(title)
-        box_layout = QVBoxLayout()
-        text = QTextEdit()
-        text.setReadOnly(True)
-        text.setFont(QFont("Courier New", 9))
-        text.setPlainText(content)
-        box_layout.addWidget(text)
-        group.setLayout(box_layout)
-        group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.layout.insertWidget(self.layout.count() - 1, group)
-
     def add_tree_section(self, title: str, entries: dict | list):
         group = QGroupBox(title)
         group.setCheckable(True)
@@ -51,7 +39,7 @@ class SchematicDetailWidget(QWidget):
         inner_layout = QVBoxLayout()
         tree = QTreeWidget()
         tree.setHeaderHidden(True)
-        tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        tree.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         if isinstance(entries, dict):
             for key, val in entries.items():
@@ -67,15 +55,15 @@ class SchematicDetailWidget(QWidget):
         # Handle expand/collapse by showing/hiding tree content
         def handle_toggle(checked):
             tree.setVisible(checked)
-            self.layout.activate()
+            self.main_layout.activate()
 
         group.toggled.connect(handle_toggle)
 
-        self.layout.insertWidget(self.layout.count() - 1, group)
+        self.main_layout.insertWidget(self.main_layout.count() - 1, group)
 
     def clear(self):
-        while self.layout.count() > 2:
-            item = self.layout.takeAt(1)
+        while self.main_layout.count() > 2:
+            item = self.main_layout.takeAt(1)
             if item.widget():
                 item.widget().deleteLater()
 
