@@ -2,19 +2,22 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QListWidget, QFileDialog, QMessageBox, QDialog
 )
+from PySide6.QtCore import QThread
 from ui.schematic_detail_widget import SchematicDetailWidget
 from ui.import_preview_dialog import ImportPreviewDialog
 from util import schematic_toolkit as st
+from util import updater
 import os
 import sys
 
 part_mapping = st.parse_part_mapping("ACFA_PS3_US_PARTID_TO_PARTNAME.txt")
+CURRENT_VERSION = "0.2.3"
 
 
 class SchematicViewer(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("ACFA Schematic Viewer")
+        self.setWindowTitle(f"ACFA Schematic Viewer v{CURRENT_VERSION}")
         self.setAcceptDrops(True)
 
         self.blocks = []
@@ -60,14 +63,35 @@ class SchematicViewer(QWidget):
         main_layout.addLayout(self.imexport_layout)
 
         self.check_for_desdoc()
+        self.check_for_updates()
 
     def check_for_desdoc(self):
         desdoc_path = os.path.join(
-            ".", "EMULATOR", "dev_hdd0", "home", "00000001", "savedata", 
+            ".", "EMULATOR", "dev_hdd0", "home", "00000001", "savedata",
             "BLUS30187ASSMBLY064", "DESDOC.DAT"
         )
         if os.path.exists(desdoc_path):
             self.process_file(desdoc_path)
+
+    def check_for_updates(self):
+        self.update_thread = QThread()
+        self.update_worker = updater.UpdateWorker(CURRENT_VERSION)
+        self.update_worker.moveToThread(self.update_thread)
+
+        self.update_worker.update_found.connect(self.on_update_found)
+        self.update_worker.error_occurred.connect(self.on_update_error)
+        self.update_thread.started.connect(self.update_worker.run)
+        self.update_thread.finished.connect(self.update_thread.deleteLater)
+
+        self.update_thread.start()
+
+    def on_update_found(self, release_info):
+        updater.show_update_dialog(release_info, self)
+        self.update_thread.quit()
+
+    def on_update_error(self, error_message):
+        print(f"Update check failed: {error_message}")
+        self.update_thread.quit()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
