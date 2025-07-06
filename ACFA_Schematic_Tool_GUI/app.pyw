@@ -11,7 +11,7 @@ import os
 import sys
 
 part_mapping = st.parse_part_mapping("ACFA_PS3_US_PARTID_TO_PARTNAME.txt")
-CURRENT_VERSION = "0.2.3"
+CURRENT_VERSION = "0.3.1"
 
 
 class SchematicViewer(QWidget):
