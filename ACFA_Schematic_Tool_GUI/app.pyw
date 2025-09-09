@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QListWidget, QFileDialog, QMessageBox, QDialog
+    QPushButton, QLabel, QListWidget, QFileDialog, QMessageBox, QDialog,
+    QInputDialog
 )
 from PySide6.QtCore import QThread
 from ui.schematic_detail_widget import SchematicDetailWidget
@@ -9,9 +10,11 @@ from util import schematic_toolkit as st
 from util import updater
 import os
 import sys
+import requests
+import tempfile
 
 part_mapping = st.parse_part_mapping("ACFA_PS3_US_PARTID_TO_PARTNAME.txt")
-CURRENT_VERSION = "0.3.1"
+CURRENT_VERSION = "0.4.0"
 
 
 class SchematicViewer(QWidget):
@@ -54,6 +57,11 @@ class SchematicViewer(QWidget):
         self.import_button.setVisible(False)
         self.import_button.clicked.connect(self.import_schematic)
         self.imexport_layout.addWidget(self.import_button)
+
+        self.import_online_button = QPushButton("Import from Online ID")
+        self.import_online_button.setVisible(False)
+        self.import_online_button.clicked.connect(self.import_from_online_id)
+        self.imexport_layout.addWidget(self.import_online_button)
 
         self.export_button = QPushButton("Export to .ac4a")
         self.export_button.setVisible(False)
@@ -126,6 +134,7 @@ class SchematicViewer(QWidget):
             self.schematic_list.setVisible(False)
             self.detail_area.update_with_data(data)
             self.import_button.setVisible(False)
+            self.import_online_button.setVisible(False)
             self.export_button.setVisible(False)
         else:
             self.blocks = st.extract_active_schematic_blocks(path)
@@ -137,6 +146,7 @@ class SchematicViewer(QWidget):
             self.schematic_list.setVisible(True)
             self.schematic_list.setCurrentRow(0)
             self.import_button.setVisible(True)
+            self.import_online_button.setVisible(True)
             self.export_button.setVisible(True)
 
     def show_schematic_details(self, index):
@@ -178,6 +188,63 @@ class SchematicViewer(QWidget):
 
         except Exception as e:
             self.label.setText(f"Import failed: {e}")
+
+    def import_from_online_id(self):
+        API_BASE_URL = "https://ac4db.org/api/schematics/"
+
+        schematic_id, ok = QInputDialog.getText(
+            self, "Import from Online Database", "Enter Schematic ID:")
+
+        if not (ok and schematic_id):
+            return  # User cancelled
+
+        self.label.setText(f"Downloading schematic ID: {schematic_id}...")
+        QApplication.processEvents()  # Update UI
+
+        temp_file_path = None
+        try:
+            # Construct URL and download
+            response = requests.get(f"{API_BASE_URL}{schematic_id}/download")
+            response.raise_for_status()  # Raises an exception for bad status codes
+
+            # Save to a temporary .ac4a file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".ac4a") as temp_f:
+                temp_file_path = temp_f.name
+                temp_f.write(response.content)
+
+            # Use existing preview and import logic
+            block = st.load_schematic_block_from_ac4a(temp_file_path)
+            data = st.display_schematic_info(block, part_mapping)
+
+            dialog = ImportPreviewDialog(data, self)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                msg = st.insert_schematic(temp_file_path, self.file_path)
+                self.blocks = st.extract_active_schematic_blocks(self.file_path)
+
+                # Refresh schematic list
+                self.schematic_list.clear()
+                for block in self.blocks:
+                    info = st.display_schematic_info(block, part_mapping)
+                    self.schematic_list.addItem(f"{info['name']} by {info['designer']}")
+                self.schematic_list.setVisible(True)
+                self.schematic_list.setCurrentRow(self.schematic_list.count() - 1)
+                self.label.setText(msg)
+            else:
+                self.label.setText("Import cancelled.")
+
+        except requests.RequestException as e:
+            error_msg = f"Download failed: {e}"
+            self.label.setText(error_msg)
+            QMessageBox.critical(self, "Download Error", error_msg)
+        except Exception as e:
+            error_msg = f"Import failed: {e}"
+            self.label.setText(error_msg)
+            QMessageBox.critical(self, "Import Error", error_msg)
+        finally:
+            # Clean up the temporary file
+            if temp_file_path and os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+                print(f"Cleaned up temporary file: {temp_file_path}")
 
     def export_schematic(self):
         index = self.schematic_list.currentRow()
