@@ -14,7 +14,7 @@ import requests
 import tempfile
 
 part_mapping = st.parse_part_mapping("ACFA_PS3_US_PARTID_TO_PARTNAME.txt")
-CURRENT_VERSION = "0.4.5"
+CURRENT_VERSION = "0.5.0"
 
 
 class SchematicViewer(QWidget):
