@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v3
@@ -26,11 +26,12 @@ jobs:
       - name: Build executable
         run: pyinstaller ACFA_Schematic_Tool_GUI/app.pyw --noconfirm --onefile --name ACFA_Schematic_Tool --add-data "ACFA_PS3_US_PARTID_TO_PARTNAME.txt;."
 
-      - name: Create Zip Archive
-        run: zip -r ACFA_Schematic_Tool.zip dist/
+      - name: Create Zip Archive (Windows)
+        shell: powershell
+        run: Compress-Archive -Path ".\dist\*" -DestinationPath ".\ACFA_Schematic_Tool.zip"
 
       - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@v2
         if: github.ref_type == 'tag'
         with:
-          files: dist/ACFA_Schematic_Tool.exe
+          files: ACFA_Schematic_Tool.zip
