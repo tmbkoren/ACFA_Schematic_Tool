@@ -2,6 +2,9 @@ import sys
 import os
 import requests
 import subprocess
+import zipfile
+import tempfile
+import shutil
 from PySide6.QtCore import QObject, Signal, QCoreApplication
 from PySide6.QtWidgets import QMessageBox
 
@@ -58,34 +61,67 @@ def show_update_dialog(release_info, parent):
 
 def download_and_apply_update(release_info, parent):
     assets = release_info.get("assets", [])
-    if not assets:
+    zip_asset = next(
+        (asset for asset in assets if asset["name"].endswith(".zip")), None)
+
+    if not zip_asset:
         QMessageBox.critical(parent, "Update Error",
-                             "No assets found for the latest release.")
+                             "No update asset (.zip) found for the latest release.")
         return
 
-    asset_url = assets[0]["browser_download_url"]
-    new_exe_name = assets[0]["name"]
+    asset_url = zip_asset["browser_download_url"]
+    zip_name = zip_asset["name"]
 
     try:
-        response = requests.get(asset_url, stream=True)
-        response.raise_for_status()
+        # Create a temporary directory to work in
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_zip_path = os.path.join(temp_dir, zip_name)
 
-        temp_exe_path = os.path.join(os.path.dirname(
-            sys.executable), f"_new_{new_exe_name}")
-        with open(temp_exe_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
+            # Download the zip file
+            response = requests.get(asset_url, stream=True)
+            response.raise_for_status()
+            with open(temp_zip_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
 
-        old_exe = os.path.abspath(sys.executable)
-        create_and_run_updater_script(temp_exe_path, sys.executable)
+            # Extract the zip file
+            with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+
+            # Find the new executable in the extracted files
+            new_exe_path_in_zip = None
+            for root, _, files in os.walk(temp_dir):
+                for file in files:
+                    if file.endswith(".exe"):
+                        new_exe_path_in_zip = os.path.join(root, file)
+                        break
+                if new_exe_path_in_zip:
+                    break
+
+            if not new_exe_path_in_zip:
+                QMessageBox.critical(
+                    parent, "Update Error", "No executable found in the downloaded update.")
+                return
+
+            # Prepare path for the new executable in the application's directory
+            new_exe_name = os.path.basename(new_exe_path_in_zip)
+            temp_exe_path_in_app_dir = os.path.join(os.path.dirname(
+                sys.executable), f"_new_{new_exe_name}")
+
+            # Move the new executable to the application's directory
+            shutil.copy(new_exe_path_in_zip, temp_exe_path_in_app_dir)
+
+        # Now that the temp_dir is cleaned up, we have the new exe ready.
+        create_and_run_updater_script(
+            temp_exe_path_in_app_dir, sys.executable)
         QCoreApplication.quit()
 
     except requests.RequestException as e:
         QMessageBox.critical(parent, "Download Error",
                              f"Failed to download update: {e}")
-    except IOError as e:
+    except (IOError, zipfile.BadZipFile) as e:
         QMessageBox.critical(parent, "File Error",
-                             f"Failed to save update: {e}")
+                             f"Failed to process update file: {e}")
 
 
 def create_and_run_updater_script(new_path, old_path):
