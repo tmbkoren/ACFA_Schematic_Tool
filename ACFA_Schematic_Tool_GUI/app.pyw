@@ -14,7 +14,7 @@ import requests
 import tempfile
 
 part_mapping = st.parse_part_mapping("ACFA_PS3_US_PARTID_TO_PARTNAME.txt")
-CURRENT_VERSION = "0.5.0"
+CURRENT_VERSION = "0.5.1"
 
 
 class SchematicViewer(QWidget):
@@ -58,7 +58,7 @@ class SchematicViewer(QWidget):
         self.import_button.clicked.connect(self.import_schematic)
         self.imexport_layout.addWidget(self.import_button)
 
-        self.import_online_button = QPushButton("Import from Online ID")
+        self.import_online_button = QPushButton("Import from ac4db ID")
         self.import_online_button.setVisible(False)
         self.import_online_button.clicked.connect(self.import_from_online_id)
         self.imexport_layout.addWidget(self.import_online_button)
