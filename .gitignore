@@ -7,3 +7,4 @@ dist
 ACFA_Schematic_Tool.spec
 **/__pycache__/
 .gemini
+.env
