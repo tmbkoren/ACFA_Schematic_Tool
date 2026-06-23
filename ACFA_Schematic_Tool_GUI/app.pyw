@@ -325,11 +325,15 @@ class SchematicViewer(QMainWindow):
             return
         self.blocks[idx] = self.editor.block
         self._set_dirty(True)
-        # A rename changes the list row label; refresh it (DESDOC view only).
+        # A rename changes the list row label and a thumbnail edit changes its
+        # icon; refresh both for the row (DESDOC view only).
         if self.is_desdoc and 0 <= idx < self.schematic_list.count():
             info = st.display_schematic_info(self.blocks[idx])
-            self.schematic_list.item(idx).setText(
-                f"{info['name']} by {info['designer']}")
+            item = self.schematic_list.item(idx)
+            item.setText(f"{info['name']} by {info['designer']}")
+            self._thumb_cache.pop(idx, None)  # invalidate stale cached pixmap
+            pixmap = self._pixmap_for(idx)
+            item.setIcon(QIcon(pixmap) if pixmap else QIcon())
         if message:
             self.statusBar().showMessage(f"{message} — unsaved")
 

@@ -11,7 +11,7 @@ Parts / Tuning / Appearance tabs.
 from PySide6.QtWidgets import (
     QWidget, QTabWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QLabel, QLineEdit, QComboBox, QPushButton, QCheckBox, QTreeWidget,
-    QTreeWidgetItem, QScrollArea, QStyle, QFrame
+    QTreeWidgetItem, QScrollArea, QStyle, QFrame, QFileDialog, QMessageBox
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -48,11 +48,18 @@ class SchematicEditorWidget(QWidget):
 
     # --- construction ---------------------------------------------------
     def _build_header(self, layout):
+        thumb_row = QHBoxLayout()
+        thumb_row.addStretch()
         self.thumb_label = QLabel()
         self.thumb_label.setFixedSize(THUMB_W, THUMB_H)
         self.thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.thumb_label.setStyleSheet("border: 1px solid #555;")
-        layout.addWidget(self.thumb_label, alignment=Qt.AlignmentFlag.AlignHCenter)
+        thumb_row.addWidget(self.thumb_label)
+        self.set_thumb_btn = QPushButton("Set thumbnail\nfrom image…")
+        self.set_thumb_btn.clicked.connect(self._set_thumbnail_from_image)
+        thumb_row.addWidget(self.set_thumb_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+        thumb_row.addStretch()
+        layout.addLayout(thumb_row)
 
         form = QFormLayout()
         self.name_edit = QLineEdit()
@@ -191,6 +198,29 @@ class SchematicEditorWidget(QWidget):
         else:
             self.thumb_label.setText("")
             self.thumb_label.setPixmap(pixmap)
+
+    def _set_thumbnail_from_image(self):
+        if self.block is None:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select thumbnail image", "",
+            "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;All files (*)")
+        if not path:
+            return
+        try:
+            from PIL import Image
+            # Phase D: simple stretch to 256x128 (the mini crop/zoom editor in
+            # Phase E will replace this auto-fit).
+            image = Image.open(path).convert("RGBA").resize(
+                (THUMB_W, THUMB_H), Image.Resampling.LANCZOS)
+            self.block = st.replace_thumbnail(
+                self.block, st.image_to_bytes(image))
+        except Exception as exc:
+            QMessageBox.warning(
+                self, "Thumbnail error", f"Could not set thumbnail:\n{exc}")
+            return
+        self._set_thumbnail(block_to_pixmap(self.block))
+        self.block_changed.emit("Thumbnail set from image")
 
     def _populate_combos(self, info=None):
         if info is None:
