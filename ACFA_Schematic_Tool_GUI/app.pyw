@@ -102,6 +102,10 @@ class SchematicViewer(QMainWindow):
         self.action_save.triggered.connect(self.save_to_desdoc)
         file_menu.addAction(self.action_save)
 
+        self.action_revert = QAction("&Revert Unsaved Changes", self)
+        self.action_revert.triggered.connect(self.revert_changes)
+        file_menu.addAction(self.action_revert)
+
         self.action_export = QAction("&Export Selected to .ac4a…", self)
         self.action_export.triggered.connect(self.export_schematic)
         file_menu.addAction(self.action_export)
@@ -154,6 +158,11 @@ class SchematicViewer(QMainWindow):
         self.save_button.clicked.connect(self.save_to_desdoc)
         button_row.addWidget(self.save_button)
 
+        self.revert_button = QPushButton("Revert")
+        self.revert_button.setToolTip("Discard unsaved changes and reload from disk")
+        self.revert_button.clicked.connect(self.revert_changes)
+        button_row.addWidget(self.revert_button)
+
         self.import_button = QPushButton("Import .ac4a into Save")
         self.import_button.clicked.connect(self.import_schematic)
         button_row.addWidget(self.import_button)
@@ -184,10 +193,13 @@ class SchematicViewer(QMainWindow):
         self._refresh_save_enabled()
 
     def _refresh_save_enabled(self):
-        """Save-to-DESDOC is available only for an open DESDOC with unsaved edits."""
+        """Save-to-DESDOC needs an open DESDOC with unsaved edits; Revert just
+        needs unsaved edits (works for .ac4a too)."""
         can_save = self.is_desdoc and self._dirty
         self.save_button.setEnabled(can_save)
         self.action_save.setEnabled(can_save)
+        self.revert_button.setEnabled(self._dirty)
+        self.action_revert.setEnabled(self._dirty)
 
     def _set_dirty(self, dirty):
         self._dirty = dirty
@@ -306,7 +318,7 @@ class SchematicViewer(QMainWindow):
             self._current_index = -1
             self.editor.clear()
 
-    def _on_block_edited(self):
+    def _on_block_edited(self, message=""):
         """The editor mutated the current block; store it back and mark dirty."""
         idx = self._current_index
         if not (0 <= idx < len(self.blocks)):
@@ -318,6 +330,8 @@ class SchematicViewer(QMainWindow):
             info = st.display_schematic_info(self.blocks[idx])
             self.schematic_list.item(idx).setText(
                 f"{info['name']} by {info['designer']}")
+        if message:
+            self.statusBar().showMessage(f"{message} — unsaved")
 
     def save_to_desdoc(self):
         if not (self.is_desdoc and self.file_path):
@@ -330,6 +344,21 @@ class SchematicViewer(QMainWindow):
             return
         self._set_dirty(False)
         self.statusBar().showMessage(msg)
+
+    def revert_changes(self):
+        if not (self._dirty and self.file_path):
+            return
+        res = QMessageBox.question(
+            self, "Revert changes",
+            "Discard all unsaved changes and reload from disk?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if res != QMessageBox.StandardButton.Yes:
+            return
+        row = self.schematic_list.currentRow() if self.is_desdoc else 0
+        self.process_file(self.file_path)  # reloads from disk, clears dirty
+        if self.is_desdoc and 0 <= row < self.schematic_list.count():
+            self.schematic_list.setCurrentRow(row)
+        self.statusBar().showMessage("Reverted to last saved state.")
 
     # --- Import / export ------------------------------------------------
     def _preview_and_insert(self, ac4a_path):

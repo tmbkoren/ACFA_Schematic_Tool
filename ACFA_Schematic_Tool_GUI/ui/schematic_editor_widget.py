@@ -23,7 +23,9 @@ _NAME_MAX_CHARS = 47  # (96-byte UTF-16-LE field // 2) - 1
 
 
 class SchematicEditorWidget(QWidget):
-    block_changed = Signal()
+    # Emitted whenever the user mutates the block; carries a short description
+    # for status-bar feedback.
+    block_changed = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -212,7 +214,7 @@ class SchematicEditorWidget(QWidget):
         if new_name == st.display_schematic_info(self.block)["name"]:
             return
         self.block = st.set_name_in_block(self.block, new_name)
-        self.block_changed.emit()
+        self.block_changed.emit(f"Renamed to '{new_name}'")
 
     def _on_combo_changed(self, slot):
         if self._loading or self.block is None:
@@ -221,7 +223,7 @@ class SchematicEditorWidget(QWidget):
         if pid is None:
             return
         self.block = st.set_part_in_block(self.block, slot, pid)
-        self.block_changed.emit()
+        self.block_changed.emit(f"Changed {PART_SLOTS[slot][1]}")
 
     def _randomize_slot(self, slot):
         if self.block is None:
@@ -232,7 +234,7 @@ class SchematicEditorWidget(QWidget):
             return
         self.block = st.set_part_in_block(self.block, slot, pid)
         self._select_combo_id(slot, pid)
-        self.block_changed.emit()
+        self.block_changed.emit(f"Randomized {PART_SLOTS[slot][1]}")
 
     def _randomize_all(self):
         if self.block is None:
@@ -240,7 +242,7 @@ class SchematicEditorWidget(QWidget):
         self.block = st.randomize_parts_in_block(
             self.block, include_debug=self._show_debug)
         self._populate_combos()
-        self.block_changed.emit()
+        self.block_changed.emit("Randomized all parts")
 
     def _on_debug_toggled(self, checked):
         self._show_debug = checked
@@ -253,11 +255,11 @@ class SchematicEditorWidget(QWidget):
         colors, _patterns, _eye = st.extract_color_data(self.block)
         self.block = st.replace_color_data(
             self.block, new_colors=st.randomize_colors(colors))
-        self.block_changed.emit()
+        self.block_changed.emit("Colors randomized (view in-game)")
 
     def _randomize_decals(self):
         if self.block is None:
             return
         self.block = st.replace_decal_data(
             self.block, st.generate_full_random_decal_data())
-        self.block_changed.emit()
+        self.block_changed.emit("Decals randomized (view in-game)")
