@@ -10,28 +10,59 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            data_sep: ';'
+            archive: ACFA_Schematic_Tool-windows.zip
+          # Pinned to an older Ubuntu so the binary links against an older glibc
+          # and runs on that distro and everything newer (glibc is backward- but
+          # not forward-compatible).
+          - os: ubuntu-22.04
+            data_sep: ':'
+            archive: ACFA_Schematic_Tool-linux.tar.gz
+
+    runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # `--paths .` puts the repo root on PyInstaller's analysis path so the root
+      # `util` package is collected (the script lives in ACFA_Schematic_Tool_GUI/,
+      # so it isn't found by default). The `ui` and `gui_util` packages are found
+      # via the script's own directory.
       - name: Build executable
-        run: pyinstaller ACFA_Schematic_Tool_GUI/app.pyw --noconfirm --onefile --name ACFA_Schematic_Tool --add-data "ACFA_PS3_US_PARTID_TO_PARTNAME.txt;."
+        run: >
+          pyinstaller ACFA_Schematic_Tool_GUI/app.pyw
+          --noconfirm --onefile --name ACFA_Schematic_Tool
+          --paths .
+          --add-data "ACFA_PS3_US_PARTID_TO_PARTNAME.txt${{ matrix.data_sep }}."
 
-      - name: Create Zip Archive (Windows)
-        shell: powershell
-        run: Compress-Archive -Path ".\dist\*" -DestinationPath ".\ACFA_Schematic_Tool.zip"
+      - name: Create archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path ".\dist\*" -DestinationPath "${{ matrix.archive }}"
+
+      - name: Create archive (Linux)
+        if: runner.os == 'Linux'
+        run: tar -czvf "${{ matrix.archive }}" -C dist .
 
       - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@v2
         if: github.ref_type == 'tag'
         with:
-          files: ACFA_Schematic_Tool.zip
+          files: ${{ matrix.archive }}
+          # Tags with a pre-release suffix (e.g. v0.6.0-beta.1) are marked as
+          # pre-releases, so the in-app updater (which queries /releases/latest)
+          # does not offer them to users on stable builds.
+          prerelease: ${{ contains(github.ref_name, '-') }}

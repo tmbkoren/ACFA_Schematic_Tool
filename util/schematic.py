@@ -5,16 +5,18 @@ import os
 import re
 import struct
 
+from . import part_data
 from .constants import BLOCK_SIZE, NAME_SIZE
-from .io_utils import load_file, save_file
-from .part_data import part_mapping
+from .io_utils import backup_desdoc, load_file, save_file
 
 
 def linear_utf16_clean_name_reader(data, start_offset, max_bytes=96):
     raw_field = data[start_offset:start_offset + max_bytes]
     try:
         decoded = raw_field.decode('utf-16-le', errors='ignore').strip('\x00')
-        match = re.match(r'^[A-Za-z0-9 ]+', decoded)
+        # Permissive: allow spaces, underscores, hyphens and dots in names
+        # (ported from the GUI's reader so names like "AC-01.B" survive).
+        match = re.match(r'^[A-Za-z0-9 _\-.]+', decoded)
         if match:
             return match.group(0).strip()
         return "<Invalid UTF-16 Encoding>"
@@ -44,11 +46,17 @@ def extract_active_schematic_blocks(file_path):
     return blocks
 
 
-def display_schematic_info(block):
+def display_schematic_info(block, part_mapping=None):
     """
     Displays the schematic information from a block.
     Returns a dictionary with the schematic information.
+
+    ``part_mapping`` is optional; when omitted, the module-level mapping is used
+    (resolved lazily so a value-import captured at start-up can't go stale).
     """
+    if part_mapping is None:
+        part_mapping = part_data.get_part_mapping()
+
     schematic_name = linear_utf16_clean_name_reader(block, 1, NAME_SIZE)
     designer_name = linear_utf16_clean_name_reader(
         block, 1 + NAME_SIZE, NAME_SIZE)
@@ -180,35 +188,54 @@ def load_schematic_block_from_ac4a(file_path: str) -> bytes:
         return f.read()
 
 
-def insert_schematic(ac4a_path, desdoc_path):
-    BLOCK_SIZE = 24280
+def write_blocks_to_desdoc(desdoc_path, blocks, backup=True):
+    """Overwrite the active schematic blocks in DESDOC.DAT, in slot order, with
+    the given list of blocks. Does not change the active count. Backs up first
+    by default. Returns a human-readable message."""
+    FIRST_MARKER_OFFSET = 0x148
+
+    backup_msg = backup_desdoc(desdoc_path) if backup else ""
+    data = bytearray(load_file(desdoc_path))
+
+    for i, block in enumerate(blocks):
+        if len(block) != BLOCK_SIZE:
+            raise ValueError(f"Block {i} must be {BLOCK_SIZE} bytes.")
+        offset = FIRST_MARKER_OFFSET + i * BLOCK_SIZE
+        if offset + BLOCK_SIZE > len(data):
+            raise ValueError(f"Block {i} exceeds DESDOC.DAT size.")
+        data[offset:offset + BLOCK_SIZE] = block
+
+    save_file(desdoc_path, data)
+    msg = f"Saved {len(blocks)} schematic(s) to {desdoc_path}."
+    return f"{msg} {backup_msg}".strip()
+
+
+def insert_schematic(ac4a_path, desdoc_path, backup=True):
+    """Splice an .ac4a block into DESDOC.DAT and bump the active-schematic count.
+
+    By default a fresh backup of DESDOC.DAT is made first (``.bak``/``.bak1``...).
+    Returns a human-readable message describing the result.
+    """
     SCHEMATIC_COUNT_OFFSET = 5
     FIRST_MARKER_OFFSET = 0x148
 
-    # Load files
+    backup_msg = backup_desdoc(desdoc_path) if backup else ""
+
     ac4a_data = load_file(ac4a_path)
     desdoc_data = bytearray(load_file(desdoc_path))
 
-    # Extract current schematic count
     current_count = desdoc_data[SCHEMATIC_COUNT_OFFSET]
-    print(f"Current active schematic count: {current_count}")
-
-    # Calculate insertion offset
     insertion_offset = FIRST_MARKER_OFFSET + (current_count * BLOCK_SIZE)
 
-    # Validate insertion space
     if insertion_offset + BLOCK_SIZE > len(desdoc_data):
-        print("Error: Not enough space to insert schematic.")
-        return
+        raise ValueError("Not enough space to insert schematic.")
 
-    # Insert schematic data
     desdoc_data[insertion_offset:insertion_offset +
                 BLOCK_SIZE] = ac4a_data[:BLOCK_SIZE]
-
-    # Update schematic count
     desdoc_data[SCHEMATIC_COUNT_OFFSET] += 1
-    print(
-        f"Inserted at slot {current_count + 1} (offset {hex(insertion_offset)}). New count: {desdoc_data[SCHEMATIC_COUNT_OFFSET]}")
 
-    # Save modified DESDOC.DAT
     save_file(desdoc_path, desdoc_data)
+
+    msg = (f"Inserted schematic from {ac4a_path} into {desdoc_path} "
+           f"(slot {current_count + 1}).")
+    return f"{msg} {backup_msg}".strip()

@@ -1,23 +1,73 @@
-from PySide6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QListWidget, QFileDialog, QMessageBox, QDialog,
-    QInputDialog
-)
-from PySide6.QtCore import QThread
-from ui.schematic_detail_widget import SchematicDetailWidget
-from ui.import_preview_dialog import ImportPreviewDialog
-from util import schematic_toolkit as st
-from util import updater
 import os
 import sys
-import requests
+
+# Make the repo root importable so `import util` (the canonical toolkit) resolves
+# regardless of the launch directory. No-op in a frozen bundle, where util is
+# already collected by PyInstaller.
+if not getattr(sys, "frozen", False):
+    _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _REPO_ROOT not in sys.path:
+        sys.path.insert(0, _REPO_ROOT)
+
+
+def _running_under_wsl():
+    if sys.platform != "linux":
+        return False
+    try:
+        release = os.uname().release.lower()
+    except AttributeError:
+        release = ""
+    return "microsoft" in release or "WSL_DISTRO_NAME" in os.environ
+
+
+# WSLg's Wayland backend mishandles Qt popup windows: combo-box dropdowns detach
+# into orphaned top-level windows that won't close. XWayland (xcb) is reliable, so
+# prefer it under WSL via a fallback LIST: Qt tries xcb first and, if its plugin
+# can't load (e.g. libxcb-cursor0 missing), falls back to wayland instead of
+# aborting. A single "xcb" value would crash the app when the plugin is absent.
+if _running_under_wsl():
+    os.environ.setdefault("QT_QPA_PLATFORM", "xcb;wayland")
+
 import tempfile
 
-part_mapping = st.parse_part_mapping("ACFA_PS3_US_PARTID_TO_PARTNAME.txt")
-CURRENT_VERSION = "0.5.1"
+import requests
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLabel, QListWidget, QListWidgetItem, QFileDialog,
+    QMessageBox, QDialog, QInputDialog
+)
+from PySide6.QtCore import QThread, QObject, Signal, QSize, Qt
+from PySide6.QtGui import QAction, QIcon
+
+import util as st
+from util import part_mapping
+from gui_util import updater
+from ui.schematic_editor_widget import SchematicEditorWidget
+from ui.import_preview_dialog import ImportPreviewDialog
+from ui.thumbnail import block_to_pixmap
+
+CURRENT_VERSION = "0.6.0-beta.1"
 
 
-class SchematicViewer(QWidget):
+class DownloadWorker(QObject):
+    """Downloads an .ac4a payload off the UI thread."""
+    finished = Signal(bytes)
+    error = Signal(str)
+
+    def __init__(self, url):
+        super().__init__()
+        self.url = url
+
+    def run(self):
+        try:
+            response = requests.get(self.url, timeout=30)
+            response.raise_for_status()
+            self.finished.emit(response.content)
+        except requests.RequestException as e:
+            self.error.emit(str(e))
+
+
+class SchematicViewer(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"ACFA Schematic Viewer v{CURRENT_VERSION}")
@@ -25,54 +75,127 @@ class SchematicViewer(QWidget):
 
         self.blocks = []
         self.file_path = None
+        self.is_desdoc = False
+        self._current_index = -1
+        self._dirty = False
+        self._download_thread = None
+        self._download_worker = None
+        self._thumb_cache = {}  # index -> QPixmap or None
 
-        main_layout = QVBoxLayout()
+        self._build_menu()
+        self._build_central()
+        self.statusBar().showMessage("Ready")
 
-        self.label = QLabel(
-            "Drag & drop a DESDOC.DAT or .ac4a file, or use the Select button:")
-        self.label.setWordWrap(True)
-        main_layout.addWidget(self.label)
+        self.check_for_desdoc()
+        self.check_for_updates()
+
+    # --- UI construction ------------------------------------------------
+    def _build_menu(self):
+        menu = self.menuBar()
+
+        file_menu = menu.addMenu("&File")
+        self.action_open = QAction("&Open File…", self)
+        self.action_open.triggered.connect(self.open_file_dialog)
+        file_menu.addAction(self.action_open)
+
+        self.action_save = QAction("&Save to DESDOC (backup)", self)
+        self.action_save.triggered.connect(self.save_to_desdoc)
+        file_menu.addAction(self.action_save)
+
+        self.action_export = QAction("&Export Selected to .ac4a…", self)
+        self.action_export.triggered.connect(self.export_schematic)
+        file_menu.addAction(self.action_export)
+
+        self.action_import = QAction("&Import .ac4a into Save…", self)
+        self.action_import.triggered.connect(self.import_schematic)
+        file_menu.addAction(self.action_import)
+
+        self.action_import_online = QAction("Import from ac4&db ID…", self)
+        self.action_import_online.triggered.connect(self.import_from_online_id)
+        file_menu.addAction(self.action_import_online)
+
+        file_menu.addSeparator()
+        action_exit = QAction("E&xit", self)
+        action_exit.triggered.connect(self.close)
+        file_menu.addAction(action_exit)
+
+        help_menu = menu.addMenu("&Help")
+        action_about = QAction("&About", self)
+        action_about.triggered.connect(self._show_about)
+        help_menu.addAction(action_about)
+
+    def _build_central(self):
+        central = QWidget()
+        main_layout = QVBoxLayout(central)
+
+        self.hint_label = QLabel(
+            "Drag & drop a DESDOC.DAT or .ac4a file, or use Select File:")
+        self.hint_label.setWordWrap(True)
+        main_layout.addWidget(self.hint_label)
 
         self.select_button = QPushButton("Select File")
         self.select_button.clicked.connect(self.open_file_dialog)
         main_layout.addWidget(self.select_button)
 
         viewer_layout = QHBoxLayout()
-
         self.schematic_list = QListWidget()
+        self.schematic_list.setIconSize(QSize(80, 40))
         self.schematic_list.currentRowChanged.connect(
             self.show_schematic_details)
-        self.schematic_list.setVisible(False)
-        viewer_layout.addWidget(self.schematic_list)
+        viewer_layout.addWidget(self.schematic_list, 1)
 
-        self.detail_area = SchematicDetailWidget()
-        viewer_layout.addWidget(self.detail_area)
-
+        self.editor = SchematicEditorWidget()
+        self.editor.block_changed.connect(self._on_block_edited)
+        viewer_layout.addWidget(self.editor, 2)
         main_layout.addLayout(viewer_layout)
-        self.setLayout(main_layout)
 
-        self.imexport_layout = QHBoxLayout()
+        button_row = QHBoxLayout()
+        self.save_button = QPushButton("Save to DESDOC")
+        self.save_button.clicked.connect(self.save_to_desdoc)
+        button_row.addWidget(self.save_button)
 
         self.import_button = QPushButton("Import .ac4a into Save")
-        self.import_button.setVisible(False)
         self.import_button.clicked.connect(self.import_schematic)
-        self.imexport_layout.addWidget(self.import_button)
+        button_row.addWidget(self.import_button)
 
         self.import_online_button = QPushButton("Import from ac4db ID")
-        self.import_online_button.setVisible(False)
         self.import_online_button.clicked.connect(self.import_from_online_id)
-        self.imexport_layout.addWidget(self.import_online_button)
+        button_row.addWidget(self.import_online_button)
 
         self.export_button = QPushButton("Export to .ac4a")
-        self.export_button.setVisible(False)
         self.export_button.clicked.connect(self.export_schematic)
-        self.imexport_layout.addWidget(self.export_button)
+        button_row.addWidget(self.export_button)
+        main_layout.addLayout(button_row)
 
-        main_layout.addLayout(self.imexport_layout)
+        self.setCentralWidget(central)
+        self._set_actions_enabled(save_loaded=False, design_selected=False)
 
-        self.check_for_desdoc()
-        self.check_for_updates()
+    def _set_actions_enabled(self, save_loaded, design_selected):
+        """Enable/disable actions by state.
 
+        ``save_loaded``  -> a DESDOC.DAT is open (insert/online import allowed).
+        ``design_selected`` -> a schematic is selected (export allowed).
+        """
+        for w in (self.import_button, self.action_import,
+                  self.import_online_button, self.action_import_online):
+            w.setEnabled(save_loaded)
+        for w in (self.export_button, self.action_export):
+            w.setEnabled(design_selected)
+        self._refresh_save_enabled()
+
+    def _refresh_save_enabled(self):
+        """Save-to-DESDOC is available only for an open DESDOC with unsaved edits."""
+        can_save = self.is_desdoc and self._dirty
+        self.save_button.setEnabled(can_save)
+        self.action_save.setEnabled(can_save)
+
+    def _set_dirty(self, dirty):
+        self._dirty = dirty
+        base = f"ACFA Schematic Viewer v{CURRENT_VERSION}"
+        self.setWindowTitle(base + (" *" if dirty else ""))
+        self._refresh_save_enabled()
+
+    # --- Startup helpers ------------------------------------------------
     def check_for_desdoc(self):
         desdoc_path = os.path.join(
             ".", "EMULATOR", "dev_hdd0", "home", "00000001", "savedata",
@@ -101,15 +224,22 @@ class SchematicViewer(QWidget):
         print(f"Update check failed: {error_message}")
         self.update_thread.quit()
 
+    def _show_about(self):
+        QMessageBox.about(
+            self, "About",
+            f"ACFA Schematic Viewer v{CURRENT_VERSION}\n\n"
+            "Viewer/editor for Armored Core: For Answer (PS3, US) designs.")
+
+    # --- Drag & drop ----------------------------------------------------
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
 
     def dropEvent(self, event):
         for url in event.mimeData().urls():
-            file_path = url.toLocalFile()
-            self.process_file(file_path)
+            self.process_file(url.toLocalFile())
 
+    # --- File handling --------------------------------------------------
     def open_file_dialog(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Open File", "", "All Files (*)")
@@ -120,153 +250,229 @@ class SchematicViewer(QWidget):
         self.file_path = path
         _, ext = os.path.splitext(path)
 
-        self.label.setText(f"Selected file: {path}")
+        self.hint_label.setText(f"Loaded: {path}")
         self.select_button.setText("Select Another File")
+        self.statusBar().showMessage(f"Loaded {os.path.basename(path)}")
 
         self.schematic_list.clear()
-        self.detail_area.clear()
-        self.schematic_list.setVisible(False)
+        self.editor.clear()
         self.blocks = []
+        self._thumb_cache = {}
+        self._current_index = -1
+        self._set_dirty(False)
 
         if ext.lower() == ".ac4a":
-            block = st.load_schematic_block_from_ac4a(path)
-            data = st.display_schematic_info(block, part_mapping)
+            # Single design: still goes through the blocks/editor model so editing
+            # is uniform; only export (not Save-to-DESDOC) applies.
+            self.is_desdoc = False
+            self.blocks = [st.load_schematic_block_from_ac4a(path)]
             self.schematic_list.setVisible(False)
-            self.detail_area.update_with_data(data)
-            self.import_button.setVisible(False)
-            self.import_online_button.setVisible(False)
-            self.export_button.setVisible(False)
+            self._current_index = 0
+            self.editor.load_block(self.blocks[0])
+            self._set_actions_enabled(save_loaded=False, design_selected=True)
         else:
+            self.is_desdoc = True
             self.blocks = st.extract_active_schematic_blocks(path)
-            self.schematic_list.clear()
-            for block in self.blocks:
-                info = st.display_schematic_info(block, part_mapping)
-                self.schematic_list.addItem(
-                    f"{info['name']} by {info['designer']}")
             self.schematic_list.setVisible(True)
-            self.schematic_list.setCurrentRow(0)
-            self.import_button.setVisible(True)
-            self.import_online_button.setVisible(True)
-            self.export_button.setVisible(True)
+            self._refresh_list(select_last=False)
+            self._set_actions_enabled(save_loaded=True, design_selected=True)
+
+    def _pixmap_for(self, index):
+        """Decode (and cache) the thumbnail QPixmap for a block index; may be None."""
+        if index not in self._thumb_cache:
+            self._thumb_cache[index] = block_to_pixmap(self.blocks[index])
+        return self._thumb_cache[index]
+
+    def _refresh_list(self, select_last=False):
+        """Repopulate the schematic list (with thumbnail icons) from self.blocks."""
+        self.schematic_list.clear()
+        self._thumb_cache = {}
+        for i, block in enumerate(self.blocks):
+            info = st.display_schematic_info(block, part_mapping)
+            item = QListWidgetItem(f"{info['name']} by {info['designer']}")
+            pixmap = self._pixmap_for(i)
+            if pixmap is not None:
+                item.setIcon(QIcon(pixmap))
+            self.schematic_list.addItem(item)
+        if self.schematic_list.count():
+            self.schematic_list.setCurrentRow(
+                self.schematic_list.count() - 1 if select_last else 0)
 
     def show_schematic_details(self, index):
         if 0 <= index < len(self.blocks):
-            data = st.display_schematic_info(self.blocks[index], part_mapping)
-            self.detail_area.update_with_data(data)
+            self._current_index = index
+            self.editor.load_block(self.blocks[index])
         else:
-            self.detail_area.clear()
+            self._current_index = -1
+            self.editor.clear()
+
+    def _on_block_edited(self):
+        """The editor mutated the current block; store it back and mark dirty."""
+        idx = self._current_index
+        if not (0 <= idx < len(self.blocks)):
+            return
+        self.blocks[idx] = self.editor.block
+        self._set_dirty(True)
+        # A rename changes the list row label; refresh it (DESDOC view only).
+        if self.is_desdoc and 0 <= idx < self.schematic_list.count():
+            info = st.display_schematic_info(self.blocks[idx])
+            self.schematic_list.item(idx).setText(
+                f"{info['name']} by {info['designer']}")
+
+    def save_to_desdoc(self):
+        if not (self.is_desdoc and self.file_path):
+            return
+        try:
+            msg = st.write_blocks_to_desdoc(self.file_path, self.blocks)
+        except Exception as e:
+            self.statusBar().showMessage(f"Save failed: {e}")
+            QMessageBox.critical(self, "Save Error", f"Save failed: {e}")
+            return
+        self._set_dirty(False)
+        self.statusBar().showMessage(msg)
+
+    # --- Import / export ------------------------------------------------
+    def _preview_and_insert(self, ac4a_path):
+        """Preview a schematic and, if confirmed, insert it into the open save.
+
+        Returns True if inserted. Raises on load/parse/insert failure."""
+        block = st.load_schematic_block_from_ac4a(ac4a_path)
+        data = st.display_schematic_info(block, part_mapping)
+
+        dialog = ImportPreviewDialog(data, self, thumbnail=block_to_pixmap(block))
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self.statusBar().showMessage("Import cancelled.")
+            return False
+
+        msg = st.insert_schematic(ac4a_path, self.file_path)
+        self.blocks = st.extract_active_schematic_blocks(self.file_path)
+        self.schematic_list.setVisible(True)
+        self._set_dirty(False)  # reloaded from disk
+        self._refresh_list(select_last=True)
+        self._set_actions_enabled(save_loaded=True, design_selected=True)
+        self.statusBar().showMessage(msg)
+        return True
+
+    def _confirm_discard_edits(self):
+        """Return True to proceed; warn first if there are unsaved edits."""
+        if not self._dirty:
+            return True
+        res = QMessageBox.question(
+            self, "Unsaved edits",
+            "You have unsaved edits that will be lost by importing (the save is "
+            "reloaded from disk afterwards). Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        return res == QMessageBox.StandardButton.Yes
 
     def import_schematic(self):
+        if not self._confirm_discard_edits():
+            return
         ac4a_path, _ = QFileDialog.getOpenFileName(
             self, "Select .ac4a to import", "", "AC4A Files (*.ac4a)")
         if not ac4a_path:
             return
-
         try:
-            block = st.load_schematic_block_from_ac4a(ac4a_path)
-            data = st.display_schematic_info(block, part_mapping)
-
-            dialog = ImportPreviewDialog(data, self)
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                msg = st.insert_schematic(ac4a_path, self.file_path)
-                self.blocks = st.extract_active_schematic_blocks(
-                    self.file_path)
-
-                # Refresh schematic list
-                self.schematic_list.clear()
-                for block in self.blocks:
-                    info = st.display_schematic_info(block, part_mapping)
-                    self.schematic_list.addItem(
-                        f"{info['name']} by {info['designer']}")
-                self.schematic_list.setVisible(True)
-                self.schematic_list.setCurrentRow(
-                    self.schematic_list.count() - 1)
-
-                self.label.setText(msg)
-            else:
-                self.label.setText("Import cancelled.")
-
+            self._preview_and_insert(ac4a_path)
         except Exception as e:
-            self.label.setText(f"Import failed: {e}")
+            self.statusBar().showMessage(f"Import failed: {e}")
+            QMessageBox.critical(self, "Import Error", f"Import failed: {e}")
 
     def import_from_online_id(self):
+        if not self._confirm_discard_edits():
+            return
         API_BASE_URL = "https://ac4db.org/api/schematics/"
-
         schematic_id, ok = QInputDialog.getText(
             self, "Import from Online Database", "Enter Schematic ID:")
-
         if not (ok and schematic_id):
-            return  # User cancelled
-
-        self.label.setText(f"Downloading schematic ID: {schematic_id}...")
-        QApplication.processEvents()  # Update UI
-
-        temp_file_path = None
-        try:
-            # Construct URL and download
-            response = requests.get(f"{API_BASE_URL}{schematic_id}/download")
-            response.raise_for_status()  # Raises an exception for bad status codes
-
-            # Save to a temporary .ac4a file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".ac4a") as temp_f:
-                temp_file_path = temp_f.name
-                temp_f.write(response.content)
-
-            # Use existing preview and import logic
-            block = st.load_schematic_block_from_ac4a(temp_file_path)
-            data = st.display_schematic_info(block, part_mapping)
-
-            dialog = ImportPreviewDialog(data, self)
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                msg = st.insert_schematic(temp_file_path, self.file_path)
-                self.blocks = st.extract_active_schematic_blocks(self.file_path)
-
-                # Refresh schematic list
-                self.schematic_list.clear()
-                for block in self.blocks:
-                    info = st.display_schematic_info(block, part_mapping)
-                    self.schematic_list.addItem(f"{info['name']} by {info['designer']}")
-                self.schematic_list.setVisible(True)
-                self.schematic_list.setCurrentRow(self.schematic_list.count() - 1)
-                self.label.setText(msg)
-            else:
-                self.label.setText("Import cancelled.")
-
-        except requests.RequestException as e:
-            error_msg = f"Download failed: {e}"
-            self.label.setText(error_msg)
-            QMessageBox.critical(self, "Download Error", error_msg)
-        except Exception as e:
-            error_msg = f"Import failed: {e}"
-            self.label.setText(error_msg)
-            QMessageBox.critical(self, "Import Error", error_msg)
-        finally:
-            # Clean up the temporary file
-            if temp_file_path and os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
-                print(f"Cleaned up temporary file: {temp_file_path}")
-
-    def export_schematic(self):
-        index = self.schematic_list.currentRow()
-        if index < 0:
             return
 
+        self.statusBar().showMessage(f"Downloading schematic ID: {schematic_id}…")
+        self.import_online_button.setEnabled(False)
+        self.action_import_online.setEnabled(False)
+
+        self._download_thread = QThread()
+        self._download_worker = DownloadWorker(
+            f"{API_BASE_URL}{schematic_id}/download")
+        self._download_worker.moveToThread(self._download_thread)
+        self._download_thread.started.connect(self._download_worker.run)
+        self._download_worker.finished.connect(self._on_download_finished)
+        self._download_worker.error.connect(self._on_download_error)
+        self._download_thread.start()
+
+    def _stop_download_thread(self):
+        if self._download_thread is not None:
+            self._download_thread.quit()
+            self._download_thread.wait()
+            self._download_thread = None
+            self._download_worker = None
+        # Re-enable per current state (online import needs a loaded save).
+        save_loaded = bool(self.blocks)
+        self.import_online_button.setEnabled(save_loaded)
+        self.action_import_online.setEnabled(save_loaded)
+
+    def _on_download_finished(self, content):
+        temp_file_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".ac4a") as f:
+                temp_file_path = f.name
+                f.write(content)
+            self._preview_and_insert(temp_file_path)
+        except Exception as e:
+            self.statusBar().showMessage(f"Import failed: {e}")
+            QMessageBox.critical(self, "Import Error", f"Import failed: {e}")
+        finally:
+            if temp_file_path and os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+            self._stop_download_thread()
+
+    def _on_download_error(self, message):
+        self.statusBar().showMessage(f"Download failed: {message}")
+        QMessageBox.critical(self, "Download Error", f"Download failed: {message}")
+        self._stop_download_thread()
+
+    def export_schematic(self):
+        index = self._current_index
+        if index < 0 or index >= len(self.blocks):
+            return
         block = self.blocks[index]
         info = st.display_schematic_info(block, part_mapping)
         default_name = f"{info['name']}_{info['designer']}.ac4a"
         output_path, _ = QFileDialog.getSaveFileName(
             self, "Save Schematic", default_name, "ACFA Schematic (*.ac4a)")
-
         if output_path:
             with open(output_path, "wb") as f:
                 f.write(block)
+            self.statusBar().showMessage(f"Exported to {output_path}")
             QMessageBox.information(
                 self, "Exported", f"Schematic saved to:\n{output_path}")
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
+    if _running_under_wsl():
+        # WSLg software-composites each popup as its own top-level window; the
+        # default fade/animation makes combo-box and menu popups slow to open and
+        # close. Disabling these (cosmetic) animations makes them snap instantly.
+        for _effect in (Qt.UIEffect.UI_AnimateCombo, Qt.UIEffect.UI_AnimateMenu,
+                        Qt.UIEffect.UI_FadeMenu, Qt.UIEffect.UI_AnimateTooltip,
+                        Qt.UIEffect.UI_FadeTooltip):
+            app.setEffectEnabled(_effect, False)
+
+    if _running_under_wsl() and app.platformName().startswith("wayland"):
+        print(
+            "Note: running on the Wayland backend under WSL, where Qt dropdown "
+            "popups can detach and fail to close. The xcb backend is reliable but "
+            "needs several X libraries. Install them and relaunch (the app will "
+            "then use xcb automatically):\n"
+            "  sudo apt install -y libxcb-cursor0 libxkbcommon-x11-0 "
+            "libxcb-icccm4 libxcb-keysyms1 libxcb-xkb1\n"
+            "(Run with QT_DEBUG_PLUGINS=1 if it still falls back, to see which "
+            "library is missing.)",
+            file=sys.stderr,
+        )
+
     viewer = SchematicViewer()
-    viewer.resize(800, 600)
+    viewer.resize(900, 650)
     viewer.show()
     sys.exit(app.exec())

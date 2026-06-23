@@ -1,8 +1,6 @@
 AC_SAVE_TEMPLATES
-input
-output
-sch_data
 venv
+docs
 build
 dist
 ACFA_Schematic_Tool.spec

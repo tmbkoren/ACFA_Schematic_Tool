@@ -3,14 +3,14 @@ from ui.schematic_detail_widget import SchematicDetailWidget
 
 
 class ImportPreviewDialog(QDialog):
-    def __init__(self, schematic_data: dict, parent=None):
+    def __init__(self, schematic_data: dict, parent=None, thumbnail=None):
         super().__init__(parent)
         self.setWindowTitle("Preview Schematic")
         self.setMinimumSize(600, 500)
 
         main_layout = QVBoxLayout()
         self.detail_widget = SchematicDetailWidget()
-        self.detail_widget.update_with_data(schematic_data)
+        self.detail_widget.update_with_data(schematic_data, thumbnail)
 
         main_layout.addWidget(self.detail_widget)
 
