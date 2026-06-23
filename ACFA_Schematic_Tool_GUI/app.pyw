@@ -46,7 +46,7 @@ from ui.schematic_editor_widget import SchematicEditorWidget
 from ui.import_preview_dialog import ImportPreviewDialog
 from ui.thumbnail import block_to_pixmap
 
-CURRENT_VERSION = "0.6.0-beta.3"
+CURRENT_VERSION = "0.6.0-beta.4"
 
 
 class DownloadWorker(QObject):
