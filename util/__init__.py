@@ -30,7 +30,10 @@ from .schematic import (
     insert_schematic,
     write_blocks_to_desdoc,
 )
-from .colors import extract_color_data, replace_color_data, randomize_colors
+from .colors import (
+    extract_color_data, replace_color_data, randomize_colors,
+    extract_visible_swatches, COLOR_SECTION_NAMES, COLOR_CHANNEL_NAMES,
+)
 from .emblems import (
     parse_emblem_data,
     parse_paint_dat,
@@ -76,6 +79,7 @@ __all__ = [
     "load_schematic_block_from_ac4a", "insert_schematic", "write_blocks_to_desdoc",
     # colors
     "extract_color_data", "replace_color_data", "randomize_colors",
+    "extract_visible_swatches", "COLOR_SECTION_NAMES", "COLOR_CHANNEL_NAMES",
     # emblems
     "parse_emblem_data", "parse_paint_dat", "generate_random_emblem",
     "append_emblem_to_paint_dat",

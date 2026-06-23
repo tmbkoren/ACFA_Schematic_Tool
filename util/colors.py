@@ -3,6 +3,52 @@
 import random
 from typing import Tuple
 
+# --- Color region structure (verified in-game) ---
+# The 0x330-byte color blob is 34 sections x 6 colors x 4 bytes (RGBA), NOT a
+# flat array. Sections 0-11 are the 12 UI-visible parts (Head, Core, R Arm,
+# L Arm, Legs, R/L Arm Unit, R/L Back Unit, Shoulder, R/L Hanger Unit); sections
+# 12-33 are the 22 stabilizers (paintable in-game but hidden from the preview
+# list). The 6 colors are Main, Sub, Support, Optional, Joint, Device. The 4th
+# byte per color is an unknown per-color finish/material setting (NOT alpha).
+TOTAL_COLOR_SECTIONS = 34
+VISIBLE_COLOR_SECTIONS = 12  # stabilizers (12-33) are excluded from editing
+COLORS_PER_SECTION = 6
+BYTES_PER_COLOR = 4
+SECTION_BYTES = COLORS_PER_SECTION * BYTES_PER_COLOR  # 24
+
+# Names for the 12 visible sections (in file order) and the 6 colors per section.
+COLOR_SECTION_NAMES = (
+    "Head", "Core", "R Arm", "L Arm", "Legs",
+    "R Arm Unit", "L Arm Unit", "R Back Unit", "L Back Unit",
+    "Shoulder Unit", "R Hanger Unit", "L Hanger Unit",
+)
+COLOR_CHANNEL_NAMES = ("Main", "Sub", "Support", "Optional", "Joint", "Device")
+
+
+def extract_visible_swatches(colors_data: bytes) -> list[list[Tuple[int, int, int]]]:
+    """
+    Parses the color blob into the 12 visible sections for display.
+
+    Returns a list of 12 sections, each a list of 6 ``(r, g, b)`` tuples in
+    ``COLOR_CHANNEL_NAMES`` order. The 22 stabilizer sections and the unused 4th
+    byte of each color are ignored.
+
+    Args:
+        colors_data: The color data block (0x330 bytes).
+
+    Returns:
+        ``[[(r, g, b), ...6], ...12]``.
+    """
+    swatches = []
+    for section in range(VISIBLE_COLOR_SECTIONS):
+        base = section * SECTION_BYTES
+        colors = []
+        for channel in range(COLORS_PER_SECTION):
+            off = base + channel * BYTES_PER_COLOR
+            colors.append((colors_data[off], colors_data[off + 1], colors_data[off + 2]))
+        swatches.append(colors)
+    return swatches
+
 
 def extract_color_data(schematic_block: bytes) -> Tuple[bytearray, bytearray, bytearray]:
     """
@@ -104,15 +150,17 @@ def replace_color_data(
 
 def randomize_colors(colors_data: bytes) -> bytes:
     """
-    Randomizes the RGB channels for all colors in a color data block.
+    Randomizes the RGB channels for the 12 UI-visible color sections.
 
-    The alpha channel of each color is preserved as it is unused in-game.
+    The 22 stabilizer sections (12-33) are intentionally left untouched, matching
+    the rest of the tool's "don't randomize stabilizers" stance. The 4th byte of
+    each color (an unknown per-color finish/material setting) is also preserved.
 
     Args:
-        colors_data: The color data block (e.g., 0x330 bytes).
+        colors_data: The color data block (0x330 bytes).
 
     Returns:
-        A new color data block with randomized RGB values.
+        A new color data block with randomized RGB values on the visible sections.
     """
     if len(colors_data) % 4 != 0:
         raise ValueError(
@@ -120,12 +168,16 @@ def randomize_colors(colors_data: bytes) -> bytes:
 
     mutable_colors = bytearray(colors_data)
 
+    # Only the first 12 (visible) sections; skip the 22 stabilizer sections.
+    randomize_limit = min(
+        len(mutable_colors), VISIBLE_COLOR_SECTIONS * SECTION_BYTES)
+
     # Iterate through each color (4 bytes at a time)
-    for i in range(0, len(mutable_colors), 4):
+    for i in range(0, randomize_limit, BYTES_PER_COLOR):
         # Randomize R, G, B channels
         mutable_colors[i] = random.randint(0, 255)   # R
         mutable_colors[i+1] = random.randint(0, 255)  # G
         mutable_colors[i+2] = random.randint(0, 255)  # B
-        # The 4th byte (alpha) at i+3 is intentionally left unchanged.
+        # The 4th byte at i+3 is intentionally left unchanged.
 
     return bytes(mutable_colors)

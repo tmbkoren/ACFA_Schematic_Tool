@@ -11,12 +11,14 @@ Parts / Tuning / Appearance tabs.
 from PySide6.QtWidgets import (
     QWidget, QTabWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QLabel, QLineEdit, QComboBox, QPushButton, QCheckBox, QTreeWidget,
-    QTreeWidgetItem, QScrollArea, QStyle
+    QTreeWidgetItem, QScrollArea, QStyle, QFrame
 )
 from PySide6.QtCore import Qt, Signal
 
 import util as st
-from util import PART_SLOTS
+from util import PART_SLOTS, COLOR_SECTION_NAMES, COLOR_CHANNEL_NAMES
+
+_SWATCH_PX = 22
 from ui.thumbnail import block_to_pixmap, THUMB_W, THUMB_H
 
 _NAME_MAX_CHARS = 47  # (96-byte UTF-16-LE field // 2) - 1
@@ -119,7 +121,35 @@ class SchematicEditorWidget(QWidget):
         self.rand_decals_btn.clicked.connect(self._randomize_decals)
         v.addWidget(self.rand_colors_btn)
         v.addWidget(self.rand_decals_btn)
-        v.addStretch()
+
+        v.addWidget(QLabel("Colors"))
+        grid_host = QWidget()
+        grid = QGridLayout(grid_host)
+        grid.setHorizontalSpacing(4)
+        grid.setVerticalSpacing(4)
+        # Header row: a corner gap, then the 6 channel names.
+        for c, name in enumerate(COLOR_CHANNEL_NAMES):
+            header = QLabel(name)
+            header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            grid.addWidget(header, 0, c + 1)
+        # One row per visible section: name label + 6 swatches.
+        self.swatches = []  # [section][channel] -> QFrame
+        for r, section_name in enumerate(COLOR_SECTION_NAMES):
+            grid.addWidget(QLabel(section_name), r + 1, 0)
+            row = []
+            for c in range(len(COLOR_CHANNEL_NAMES)):
+                sw = QFrame()
+                sw.setFixedSize(_SWATCH_PX, _SWATCH_PX)
+                sw.setFrameShape(QFrame.Shape.Box)
+                grid.addWidget(sw, r + 1, c + 1)
+                row.append(sw)
+            self.swatches.append(row)
+        grid.setColumnStretch(len(COLOR_CHANNEL_NAMES) + 1, 1)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(grid_host)
+        v.addWidget(scroll)
         self.tabs.addTab(w, "Appearance")
 
     # --- public API -----------------------------------------------------
@@ -134,6 +164,7 @@ class SchematicEditorWidget(QWidget):
             self._set_thumbnail(block_to_pixmap(block))
             self._populate_combos(info)
             self._populate_tuning(info)
+            self._populate_swatches()
             self.setEnabled(True)
         finally:
             self._loading = False
@@ -148,6 +179,7 @@ class SchematicEditorWidget(QWidget):
         for combo in self.combos:
             combo.clear()
         self.tuning_tree.clear()
+        self._clear_swatches()
         self.setEnabled(False)
         self._loading = False
 
@@ -206,6 +238,21 @@ class SchematicEditorWidget(QWidget):
         for key, value in info["tuning"].items():
             QTreeWidgetItem(self.tuning_tree, [f"{key}: {value}"])
 
+    def _populate_swatches(self):
+        colors, _patterns, _eye = st.extract_color_data(self.block)
+        sections = st.extract_visible_swatches(colors)
+        for r, row in enumerate(sections):
+            for c, (red, green, blue) in enumerate(row):
+                self.swatches[r][c].setStyleSheet(
+                    f"background-color: rgb({red}, {green}, {blue});")
+                self.swatches[r][c].setToolTip(f"#{red:02X}{green:02X}{blue:02X}")
+
+    def _clear_swatches(self):
+        for row in self.swatches:
+            for sw in row:
+                sw.setStyleSheet("")
+                sw.setToolTip("")
+
     # --- edit handlers --------------------------------------------------
     def _on_name_edited(self):
         if self._loading or self.block is None:
@@ -255,6 +302,7 @@ class SchematicEditorWidget(QWidget):
         colors, _patterns, _eye = st.extract_color_data(self.block)
         self.block = st.replace_color_data(
             self.block, new_colors=st.randomize_colors(colors))
+        self._populate_swatches()
         self.block_changed.emit("Colors randomized (view in-game)")
 
     def _randomize_decals(self):
