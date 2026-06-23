@@ -11,7 +11,8 @@ Parts / Tuning / Appearance tabs.
 from PySide6.QtWidgets import (
     QWidget, QTabWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QLabel, QLineEdit, QComboBox, QPushButton, QCheckBox, QTreeWidget,
-    QTreeWidgetItem, QScrollArea, QStyle, QFrame, QFileDialog, QMessageBox
+    QTreeWidgetItem, QScrollArea, QStyle, QFrame, QFileDialog, QMessageBox,
+    QDialog
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -209,12 +210,16 @@ class SchematicEditorWidget(QWidget):
             return
         try:
             from PIL import Image
-            # Phase D: simple stretch to 256x128 (the mini crop/zoom editor in
-            # Phase E will replace this auto-fit).
-            image = Image.open(path).convert("RGBA").resize(
-                (THUMB_W, THUMB_H), Image.Resampling.LANCZOS)
+            from ui.thumbnail_editor import ThumbnailEditorDialog
+            source = Image.open(path)
+            dlg = ThumbnailEditorDialog(source, self)
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return  # cancel = no-op (block untouched, not marked dirty)
+            result = dlg.get_result()
+            if result is None:
+                return
             self.block = st.replace_thumbnail(
-                self.block, st.image_to_bytes(image))
+                self.block, st.image_to_bytes(result))
         except Exception as exc:
             QMessageBox.warning(
                 self, "Thumbnail error", f"Could not set thumbnail:\n{exc}")
