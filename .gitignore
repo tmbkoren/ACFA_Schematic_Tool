@@ -1,4 +1,5 @@
 AC_SAVE_TEMPLATES
+input
 output
 sch_data
 venv
@@ -8,3 +9,5 @@ ACFA_Schematic_Tool.spec
 **/__pycache__/
 .gemini
 .env
+.claude
+CLAUDE.md

@@ -1,3 +1,5 @@
+"""Color, pattern, and eye-color regions of a schematic block."""
+
 import random
 from typing import Tuple
 
@@ -46,9 +48,9 @@ def extract_color_data(schematic_block: bytes) -> Tuple[bytearray, bytearray, by
 
 def replace_color_data(
     schematic_block: bytes,
-    new_colors: bytes = None,
-    new_patterns: bytes = None,
-    new_eye_color: bytes = None
+    new_colors: bytes | None = None,
+    new_patterns: bytes | None = None,
+    new_eye_color: bytes | None = None
 ) -> bytes:
     """
     Replaces specified color, pattern, or eye color data in a schematic block.
