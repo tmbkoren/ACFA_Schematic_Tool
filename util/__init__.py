@@ -21,6 +21,7 @@ from .part_data import (
 from .schematic import (
     linear_utf16_clean_name_reader,
     read_timestamp,
+    format_timestamp,
     extract_active_schematic_blocks,
     display_schematic_info,
     extract_parts,
@@ -73,7 +74,7 @@ __all__ = [
     # part data
     "parse_part_mapping", "part_mapping", "load_part_mapping", "get_part_mapping",
     # schematic
-    "linear_utf16_clean_name_reader", "read_timestamp",
+    "linear_utf16_clean_name_reader", "read_timestamp", "format_timestamp",
     "extract_active_schematic_blocks", "display_schematic_info",
     "extract_parts", "extract_tuning", "save_schematic_block_as_ac4a",
     "load_schematic_block_from_ac4a", "insert_schematic", "write_blocks_to_desdoc",

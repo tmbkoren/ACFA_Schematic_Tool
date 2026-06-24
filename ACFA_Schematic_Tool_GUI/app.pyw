@@ -36,8 +36,8 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QListWidget, QListWidgetItem, QFileDialog,
     QMessageBox, QDialog, QInputDialog
 )
-from PySide6.QtCore import QThread, QObject, Signal, QSize, Qt
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtCore import QThread, QObject, Signal, Qt
+from PySide6.QtGui import QAction
 
 import util as st
 from util import part_mapping
@@ -45,8 +45,10 @@ from gui_util import updater
 from ui.schematic_editor_widget import SchematicEditorWidget
 from ui.import_preview_dialog import ImportPreviewDialog
 from ui.thumbnail import block_to_pixmap
+from ui.palette import build_stylesheet
+from ui.schematic_card import SchematicCard, SchematicListWidget
 
-CURRENT_VERSION = "0.6.0-beta.4"
+CURRENT_VERSION = "0.6.0-beta.5"
 
 
 class DownloadWorker(QObject):
@@ -142,8 +144,7 @@ class SchematicViewer(QMainWindow):
         main_layout.addWidget(self.select_button)
 
         viewer_layout = QHBoxLayout()
-        self.schematic_list = QListWidget()
-        self.schematic_list.setIconSize(QSize(80, 40))
+        self.schematic_list = SchematicListWidget()
         self.schematic_list.currentRowChanged.connect(
             self.show_schematic_details)
         viewer_layout.addWidget(self.schematic_list, 1)
@@ -295,17 +296,24 @@ class SchematicViewer(QMainWindow):
             self._thumb_cache[index] = block_to_pixmap(self.blocks[index])
         return self._thumb_cache[index]
 
+    def _make_card(self, index):
+        """Build an ac4db-style card widget for a block index."""
+        info = st.display_schematic_info(self.blocks[index], part_mapping)
+        date_str = st.format_timestamp(info.get("timestamp", 0))
+        return SchematicCard(
+            self._pixmap_for(index), info["name"], info["designer"], date_str)
+
     def _refresh_list(self, select_last=False):
-        """Repopulate the schematic list (with thumbnail icons) from self.blocks."""
+        """Repopulate the schematic list (with ac4db cards) from self.blocks."""
         self.schematic_list.clear()
         self._thumb_cache = {}
-        for i, block in enumerate(self.blocks):
-            info = st.display_schematic_info(block, part_mapping)
-            item = QListWidgetItem(f"{info['name']} by {info['designer']}")
-            pixmap = self._pixmap_for(i)
-            if pixmap is not None:
-                item.setIcon(QIcon(pixmap))
+        for i in range(len(self.blocks)):
+            card = self._make_card(i)
+            item = QListWidgetItem()
+            item.setSizeHint(card.sizeHint())
             self.schematic_list.addItem(item)
+            self.schematic_list.setItemWidget(item, card)
+        self.schematic_list.fit_item_widths()
         if self.schematic_list.count():
             self.schematic_list.setCurrentRow(
                 self.schematic_list.count() - 1 if select_last else 0)
@@ -325,15 +333,15 @@ class SchematicViewer(QMainWindow):
             return
         self.blocks[idx] = self.editor.block
         self._set_dirty(True)
-        # A rename changes the list row label and a thumbnail edit changes its
-        # icon; refresh both for the row (DESDOC view only).
+        # A rename or thumbnail edit changes the row's card; rebuild it
+        # (DESDOC view only).
         if self.is_desdoc and 0 <= idx < self.schematic_list.count():
-            info = st.display_schematic_info(self.blocks[idx])
-            item = self.schematic_list.item(idx)
-            item.setText(f"{info['name']} by {info['designer']}")
             self._thumb_cache.pop(idx, None)  # invalidate stale cached pixmap
-            pixmap = self._pixmap_for(idx)
-            item.setIcon(QIcon(pixmap) if pixmap else QIcon())
+            item = self.schematic_list.item(idx)
+            card = self._make_card(idx)
+            item.setSizeHint(card.sizeHint())
+            self.schematic_list.setItemWidget(item, card)
+            self.schematic_list.fit_item_widths()
         if message:
             self.statusBar().showMessage(f"{message} — unsaved")
 
@@ -482,6 +490,7 @@ class SchematicViewer(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setStyleSheet(build_stylesheet())
 
     if _running_under_wsl():
         # WSLg software-composites each popup as its own top-level window; the
@@ -506,6 +515,6 @@ if __name__ == "__main__":
         )
 
     viewer = SchematicViewer()
-    viewer.resize(900, 650)
+    viewer.resize(1200, 800)
     viewer.show()
     sys.exit(app.exec())

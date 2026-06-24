@@ -4,6 +4,7 @@ DESDOC.DAT <-> .ac4a exchange."""
 import os
 import re
 import struct
+from datetime import datetime, timedelta
 
 from . import part_data
 from .constants import BLOCK_SIZE, NAME_SIZE
@@ -27,6 +28,20 @@ def linear_utf16_clean_name_reader(data, start_offset, max_bytes=96):
 def read_timestamp(data, offset):
     timestamp_bytes = data[offset:offset + 8]
     return struct.unpack(">Q", timestamp_bytes)[0]
+
+
+def format_timestamp(value):
+    """Format the raw 64-bit schematic timestamp as ``YY/MM/DD HH:MM:SS``.
+
+    The stored value is microseconds since 0001-01-01 (empirically derived from
+    real saves: ``value / 1e6`` seconds yields the in-game date). Returns an
+    empty string if the value is out of range / undecodable.
+    """
+    try:
+        dt = datetime(1, 1, 1) + timedelta(microseconds=value)
+        return dt.strftime("%y/%m/%d %H:%M:%S")
+    except (OverflowError, OSError, ValueError):
+        return ""
 
 
 def extract_active_schematic_blocks(file_path):

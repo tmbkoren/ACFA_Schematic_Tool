@@ -10,9 +10,8 @@ Parts / Tuning / Appearance tabs.
 
 from PySide6.QtWidgets import (
     QWidget, QTabWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
-    QLabel, QLineEdit, QComboBox, QPushButton, QCheckBox, QTreeWidget,
-    QTreeWidgetItem, QScrollArea, QStyle, QFrame, QFileDialog, QMessageBox,
-    QDialog
+    QLabel, QLineEdit, QComboBox, QPushButton, QCheckBox,
+    QScrollArea, QStyle, QFrame, QFileDialog, QMessageBox, QDialog
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -21,6 +20,7 @@ from util import PART_SLOTS, COLOR_SECTION_NAMES, COLOR_CHANNEL_NAMES
 
 _SWATCH_PX = 22
 from ui.thumbnail import block_to_pixmap, THUMB_W, THUMB_H
+from ui.tuning_panel import TuningPanel
 
 _NAME_MAX_CHARS = 47  # (96-byte UTF-16-LE field // 2) - 1
 
@@ -113,12 +113,11 @@ class SchematicEditorWidget(QWidget):
         self.tabs.addTab(outer, "Parts")
 
     def _build_tuning_tab(self):
-        w = QWidget()
-        v = QVBoxLayout(w)
-        self.tuning_tree = QTreeWidget()
-        self.tuning_tree.setHeaderHidden(True)
-        v.addWidget(self.tuning_tree)
-        self.tabs.addTab(w, "Tuning")
+        self.tuning_panel = TuningPanel()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(self.tuning_panel)
+        self.tabs.addTab(scroll, "Tuning")
 
     def _build_appearance_tab(self):
         w = QWidget()
@@ -186,7 +185,7 @@ class SchematicEditorWidget(QWidget):
         self._set_thumbnail(None)
         for combo in self.combos:
             combo.clear()
-        self.tuning_tree.clear()
+        self.tuning_panel.clear()
         self._clear_swatches()
         self.setEnabled(False)
         self._loading = False
@@ -269,9 +268,7 @@ class SchematicEditorWidget(QWidget):
             self._loading = was_loading
 
     def _populate_tuning(self, info):
-        self.tuning_tree.clear()
-        for key, value in info["tuning"].items():
-            QTreeWidgetItem(self.tuning_tree, [f"{key}: {value}"])
+        self.tuning_panel.set_tuning(info["tuning"])
 
     def _populate_swatches(self):
         colors, _patterns, _eye = st.extract_color_data(self.block)
