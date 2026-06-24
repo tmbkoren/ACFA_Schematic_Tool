@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QListWidget, QListWidgetItem, QFileDialog,
     QMessageBox, QDialog, QInputDialog
 )
-from PySide6.QtCore import QThread, QObject, Signal, Qt
+from PySide6.QtCore import QThread, QObject, Signal, Qt, QSettings
 from PySide6.QtGui import QAction, QIcon
 
 import util as st
@@ -56,6 +56,22 @@ CURRENT_VERSION = "1.0.0"
 # bundled build also add it to PyInstaller's --add-data (e.g.
 # "ACFA_icon.png:." on Linux / "ACFA_icon.png;." on Windows). A .png or .ico works.
 ICON_FILENAME = "ACFA_icon.png"
+
+# The save file lives at a fixed sub-path under the emulator's data folder; only
+# the emulator folder's name/location varies between setups. Auto-detect probes
+# these folder names in the launch directory (RPCS3 setups commonly name it
+# "EMULATOR" — e.g. the PCFA pack — or "rpcs3"), and the user can point us at the
+# emulator folder explicitly via File ▸ Set Emulator Folder (persisted below).
+SAVE_SUBPATH = os.path.join(
+    "dev_hdd0", "home", "00000001", "savedata",
+    "BLUS30187ASSMBLY064", "DESDOC.DAT"
+)
+EMULATOR_FOLDER_NAMES = ("EMULATOR", "rpcs3")
+
+
+def _desdoc_under(emulator_root):
+    """Full DESDOC.DAT path for a given emulator folder (the one holding dev_hdd0)."""
+    return os.path.join(emulator_root, SAVE_SUBPATH)
 
 
 class DownloadWorker(QObject):
@@ -81,6 +97,9 @@ class SchematicViewer(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"ACFA Schematic Viewer v{CURRENT_VERSION}")
         self.setAcceptDrops(True)
+
+        # Persists the user-chosen emulator folder (org/app names set in main()).
+        self.settings = QSettings()
 
         # App icon: loads ICON_FILENAME if present, otherwise no-op (placeholder
         # until an icon is added).
@@ -152,9 +171,18 @@ class SchematicViewer(QMainWindow):
         self.hint_label.setWordWrap(True)
         main_layout.addWidget(self.hint_label)
 
+        select_row = QHBoxLayout()
         self.select_button = QPushButton("Select File")
         self.select_button.clicked.connect(self.open_file_dialog)
-        main_layout.addWidget(self.select_button)
+        select_row.addWidget(self.select_button)
+
+        self.set_emulator_button = QPushButton("Set Emulator Folder")
+        self.set_emulator_button.setToolTip(
+            "Point at your emulator folder (the one containing 'dev_hdd0') to "
+            "auto-load the save")
+        self.set_emulator_button.clicked.connect(self.set_emulator_folder)
+        select_row.addWidget(self.set_emulator_button)
+        main_layout.addLayout(select_row)
 
         viewer_layout = QHBoxLayout()
         self.schematic_list = SchematicListWidget()
@@ -223,12 +251,40 @@ class SchematicViewer(QMainWindow):
 
     # --- Startup helpers ------------------------------------------------
     def check_for_desdoc(self):
-        desdoc_path = os.path.join(
-            ".", "EMULATOR", "dev_hdd0", "home", "00000001", "savedata",
-            "BLUS30187ASSMBLY064", "DESDOC.DAT"
-        )
+        """Try to auto-load the save: first a folder the user pointed us at, then
+        the common emulator folder names in the launch directory."""
+        candidates = []
+        saved = self.settings.value("emulator_folder", "")
+        if saved:
+            candidates.append(saved)
+        candidates += [os.path.join(".", name) for name in EMULATOR_FOLDER_NAMES]
+
+        for root in candidates:
+            desdoc_path = _desdoc_under(root)
+            if os.path.exists(desdoc_path):
+                self.process_file(desdoc_path)
+                return
+
+    def set_emulator_folder(self):
+        """Let the user point at their emulator folder (the one containing
+        dev_hdd0); the rest of the save path is fixed. Persists on success."""
+        start_dir = self.settings.value("emulator_folder", "") or ""
+        folder = QFileDialog.getExistingDirectory(
+            self, "Select your emulator folder (the one containing 'dev_hdd0')",
+            start_dir)
+        if not folder:
+            return
+
+        desdoc_path = _desdoc_under(folder)
         if os.path.exists(desdoc_path):
+            self.settings.setValue("emulator_folder", folder)
             self.process_file(desdoc_path)
+        else:
+            QMessageBox.warning(
+                self, "Save not found",
+                "No DESDOC.DAT was found under that folder.\n\n"
+                "Pick the emulator folder that contains 'dev_hdd0'. "
+                "The full path looked for was:\n\n" + desdoc_path)
 
     def check_for_updates(self):
         self.update_thread = QThread()
@@ -503,6 +559,9 @@ class SchematicViewer(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    # Names give QSettings a stable, cross-platform storage location.
+    app.setOrganizationName("tmbkoren")
+    app.setApplicationName("ACFA_Schematic_Tool")
     app.setStyleSheet(build_stylesheet())
 
     if _running_under_wsl():
