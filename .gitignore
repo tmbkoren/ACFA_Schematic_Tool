@@ -9,3 +9,6 @@ ACFA_Schematic_Tool.spec
 .env
 .claude
 CLAUDE.md
+# Windows "mark of the web" NTFS alternate-data-stream files; their ':' path is
+# invalid on Windows checkouts and breaks the CI build.
+*:Zone.Identifier
