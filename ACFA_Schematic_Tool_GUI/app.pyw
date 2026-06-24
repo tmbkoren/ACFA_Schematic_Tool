@@ -48,7 +48,7 @@ from ui.thumbnail import block_to_pixmap
 from ui.palette import build_stylesheet
 from ui.schematic_card import SchematicCard, SchematicListWidget
 
-CURRENT_VERSION = "0.6.0-beta.7"
+CURRENT_VERSION = "1.0.0"
 
 # Placeholder for the app/window icon. Drop your icon file in the repo root (or
 # update this name) and it will be picked up automatically. resource_path() makes
