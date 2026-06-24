@@ -37,16 +37,37 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Include the app icon if it has been committed: --add-data bundles it so
+      # the in-app window icon resolves via resource_path (matches ICON_FILENAME
+      # in app.pyw), and --icon embeds it in the Windows .exe (no effect on Linux,
+      # so only added there). Resolved into $ICON_ARGS so a missing icon file
+      # doesn't break the build (the runtime code already no-ops without it).
+      - name: Resolve icon args
+        shell: bash
+        run: |
+          if [ -f ACFA_icon.png ]; then
+            ARGS='--add-data ACFA_icon.png${{ matrix.data_sep }}.'
+            if [ "${{ runner.os }}" = "Windows" ]; then
+              ARGS="$ARGS --icon ACFA_icon.png"
+            fi
+            echo "ICON_ARGS=$ARGS" >> "$GITHUB_ENV"
+          else
+            echo "ICON_ARGS=" >> "$GITHUB_ENV"
+            echo "::notice::ACFA_icon.png not found — building without an app icon."
+          fi
+
       # `--paths .` puts the repo root on PyInstaller's analysis path so the root
       # `util` package is collected (the script lives in ACFA_Schematic_Tool_GUI/,
       # so it isn't found by default). The `ui` and `gui_util` packages are found
       # via the script's own directory.
       - name: Build executable
+        shell: bash
         run: >
           pyinstaller ACFA_Schematic_Tool_GUI/app.pyw
           --noconfirm --onefile --name ACFA_Schematic_Tool
           --paths .
           --add-data "ACFA_PS3_US_PARTID_TO_PARTNAME.txt${{ matrix.data_sep }}."
+          $ICON_ARGS
 
       - name: Create archive (Windows)
         if: runner.os == 'Windows'

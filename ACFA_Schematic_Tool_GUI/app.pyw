@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QDialog, QInputDialog
 )
 from PySide6.QtCore import QThread, QObject, Signal, Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QIcon
 
 import util as st
 from util import part_mapping
@@ -48,7 +48,14 @@ from ui.thumbnail import block_to_pixmap
 from ui.palette import build_stylesheet
 from ui.schematic_card import SchematicCard, SchematicListWidget
 
-CURRENT_VERSION = "0.6.0-beta.5"
+CURRENT_VERSION = "0.6.0-beta.6"
+
+# Placeholder for the app/window icon. Drop your icon file in the repo root (or
+# update this name) and it will be picked up automatically. resource_path() makes
+# it resolve both when run from source and inside the PyInstaller bundle — for the
+# bundled build also add it to PyInstaller's --add-data (e.g.
+# "ACFA_icon.png:." on Linux / "ACFA_icon.png;." on Windows). A .png or .ico works.
+ICON_FILENAME = "ACFA_icon.png"
 
 
 class DownloadWorker(QObject):
@@ -74,6 +81,12 @@ class SchematicViewer(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"ACFA Schematic Viewer v{CURRENT_VERSION}")
         self.setAcceptDrops(True)
+
+        # App icon: loads ICON_FILENAME if present, otherwise no-op (placeholder
+        # until an icon is added).
+        icon_path = st.resource_path(ICON_FILENAME)
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
 
         self.blocks = []
         self.file_path = None
